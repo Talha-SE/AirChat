@@ -127,17 +127,30 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Update the translation endpoint to use DeepL API
+// Update the translation endpoint to use DeepL API with improved caching
+const translationCache = new Map(); // Cache to store recent translations
+const CACHE_EXPIRY = 3600000; // Cache expiration time in ms (1 hour)
+
 app.post('/translate', async (req, res) => {
   try {
     const { text, targetLang } = req.body;
+    
+    // Create a cache key combining text and target language
+    const cacheKey = `${text.substring(0, 100)}_${targetLang}`;
+    
+    // Check if translation is in cache and not expired
+    if (translationCache.has(cacheKey)) {
+      const cacheEntry = translationCache.get(cacheKey);
+      if (Date.now() - cacheEntry.timestamp < CACHE_EXPIRY) {
+        return res.json({ translation: cacheEntry.translation });
+      }
+    }
     
     // DeepL API integration
     const DEEPL_API_KEY = '3d778465-68f0-4548-8b70-22b3af29d268:fx'; // Get this from DeepL
     const DEEPL_API_URL = 'https://api-free.deepl.com/v2/translate';
     
     // Convert our language codes to DeepL format if needed
-    // EN->EN-US, JA->JA, etc.
     const deepLLangCode = {
       'EN': 'EN-US',
       'ES': 'ES',
@@ -166,6 +179,22 @@ app.post('/translate', async (req, res) => {
     
     const data = await response.json();
     const translation = data.translations[0].text;
+    
+    // Store in cache
+    translationCache.set(cacheKey, {
+      translation: translation,
+      timestamp: Date.now()
+    });
+    
+    // Clean up old cache entries occasionally
+    if (Math.random() < 0.1) { // 10% chance to clean up each request
+      const now = Date.now();
+      for (const [key, value] of translationCache.entries()) {
+        if (now - value.timestamp > CACHE_EXPIRY) {
+          translationCache.delete(key);
+        }
+      }
+    }
     
     res.json({ translation });
   } catch (error) {
@@ -224,8 +253,14 @@ io.on('connection', (socket) => {
   });
   
   socket.on('chat_message', (data) => {
+    // Ensure message has the source language
+    const completeData = {
+      ...data,
+      sourceLang: data.sourceLang || 'EN' // Default to English if not specified
+    };
+    
     // Broadcast the message to all clients
-    io.emit('chat_message', data);
+    io.emit('chat_message', completeData);
   });
   
   // Enhanced file sharing with real file URLs

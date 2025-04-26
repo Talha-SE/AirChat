@@ -9,7 +9,14 @@
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
-        /* Mobile-specific styles */
+        /* Base styles for all devices */
+        body {
+            touch-action: manipulation;
+            overscroll-behavior-y: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        /* Small phones (up to 640px) */
         @media (max-width: 640px) {
             .container {
                 padding: 0 !important;
@@ -32,6 +39,7 @@
             .message-bubble {
                 max-width: 85% !important;
                 padding: 0.75rem !important;
+                margin-bottom: 0.75rem;
             }
             
             .message-form-container {
@@ -41,6 +49,8 @@
             
             #language-dropdown {
                 right: -2rem;
+                max-height: 80vh;
+                overflow-y: auto;
             }
             
             /* Adjust header for smaller screens */
@@ -52,12 +62,75 @@
                 width: 2.5rem !important;
                 height: 2.5rem !important;
             }
+            
+            /* Increase size of action buttons */
+            #message-form button[type="submit"] {
+                width: 3.5rem !important;
+                height: 3.5rem !important;
+            }
+        }
+        
+        /* Tablets (641px to 1024px) */
+        @media (min-width: 641px) and (max-width: 1024px) {
+            .container {
+                max-width: 95% !important;
+            }
+            
+            .message-bubble {
+                max-width: 90% !important;
+            }
+            
+            .app-header {
+                padding: 1rem !important;
+            }
+            
+            .message-form-container {
+                padding: 1rem !important;
+            }
+            
+            #language-dropdown {
+                right: 0;
+                width: 18rem;
+            }
+        }
+        
+        /* Landscape orientation for mobile devices */
+        @media (max-height: 500px) and (orientation: landscape) {
+            .container {
+                height: 100vh !important;
+                padding: 0 !important;
+            }
+            
+            .app-header {
+                padding: 0.5rem !important;
+            }
+            
+            .chat-container {
+                padding: 0.5rem !important;
+            }
+            
+            .welcome-container {
+                padding: 0.5rem !important;
+            }
+            
+            .message-form-container {
+                padding: 0.5rem !important;
+            }
         }
         
         /* Touch-friendly improvements */
         button, .language-selector, .file-item, a {
             cursor: pointer;
             touch-action: manipulation;
+            min-height: 44px; /* Apple's recommended minimum tap target size */
+        }
+        
+        /* Make action buttons larger for touch */
+        .message-form-container button,
+        #translate-toggle,
+        .language-selector {
+            font-size: 1rem;
+            padding: 0.75rem !important;
         }
         
         /* Add mobile app feel */
@@ -72,12 +145,49 @@
             -webkit-overflow-scrolling: touch;
             scroll-behavior: smooth;
             overscroll-behavior-y: contain;
+            overflow-y: auto;
+            scrollbar-width: thin;
         }
         
         /* Fix image display on mobile */
         img.max-h-64 {
             max-width: 100%;
             height: auto;
+            object-fit: contain;
+        }
+        
+        /* Fix message input on mobile */
+        #message-input {
+            font-size: 16px !important; /* Prevent iOS zoom on focus */
+            padding-right: 5rem !important; /* Ensure there's space for buttons */
+        }
+        
+        /* Improve file attachment display */
+        .file-item {
+            width: 100%;
+        }
+        
+        /* Better tap targets for form controls */
+        .message-form-container .absolute button {
+            margin: 0 0.2rem;
+            padding: 0.5rem !important;
+        }
+        
+        /* Prevent text selection on double-tap */
+        p, h1, h2, span, div {
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        
+        /* Allow text selection in message content */
+        .message-bubble p {
+            -webkit-user-select: text;
+            user-select: text;
+        }
+        
+        /* Smooth animations for better performance */
+        * {
+            transition: all 0.2s ease;
         }
     </style>
 </head>
@@ -302,26 +412,42 @@
                 if (data.userId && data.userId !== userId) {
                     console.log('Adding message from:', data.userName);
                     
-                    // Add message to chat
-                    const otherMessageElement = addMessage(data.message, false, '', data.userName);
-                    
-                    // Play notification sound
-                    playMessageSound();
-                    
-                    // Translate received message if translation is enabled
-                    if (selectedLanguage) {
+                    // If translation is enabled and target language is different from source
+                    if (selectedLanguage && (!data.sourceLang || data.sourceLang !== selectedLanguage)) {
+                        // First add the message in "translating" state
+                        const otherMessageElement = addMessage(data.message, false, 'Translating...', data.userName);
+                        const messageTextElement = otherMessageElement.querySelector('p.leading-relaxed');
                         const translationElement = otherMessageElement.querySelector('.translated-message');
-                        translationElement.textContent = 'Translating...';
-                        translationElement.classList.remove('hidden');
                         
+                        // Remove the hidden class from translation element
+                        if (translationElement) translationElement.classList.remove('hidden');
+                        
+                        // Play notification sound
+                        playMessageSound();
+                        
+                        // Translate received message
                         translateText(data.message, selectedLanguage)
                             .then(translatedText => {
-                                translationElement.textContent = translatedText;
+                                // Update the main message content with translation
+                                if (messageTextElement) {
+                                    // Store the original text as data attribute
+                                    messageTextElement.setAttribute('data-original', data.message);
+                                    messageTextElement.textContent = translatedText;
+                                }
+                                
+                                // Show original text in translation element
+                                if (translationElement) {
+                                    translationElement.innerHTML = `<span class="text-xs text-slate-400">Original: </span>${data.message}`;
+                                }
                             })
                             .catch(err => {
                                 console.error('Translation error:', err);
-                                translationElement.textContent = 'Translation failed';
+                                if (translationElement) translationElement.textContent = 'Translation failed';
                             });
+                    } else {
+                        // No translation needed, show as is
+                        addMessage(data.message, false, '', data.userName);
+                        playMessageSound();
                     }
                 } else {
                     console.log('Ignoring own message or invalid message');
@@ -406,19 +532,48 @@
             
             languageSelectors.forEach(selector => {
                 selector.addEventListener('click', function() {
+                    const previousLanguage = selectedLanguage;
                     selectedLanguage = this.dataset.lang;
-                    translateToggle.innerHTML = `<i class="fas fa-language"></i><span>${this.dataset.lang}</span>`;                    
+                    translateToggle.innerHTML = `<i class="fas fa-language text-blue-400"></i><span class="ml-2">${this.textContent}</span>`;
                     languageDropdown.classList.add('hidden');
                     
-                    // Show/hide translations based on selection
-                    const translatedMessages = document.querySelectorAll('.translated-message');
-                    translatedMessages.forEach(msg => {
-                        if (selectedLanguage) {
-                            msg.classList.remove('hidden');
-                        } else {
-                            msg.classList.add('hidden');
-                        }
-                    });
+                    // Only retranslate messages if the language changed
+                    if (previousLanguage !== selectedLanguage) {
+                        // Get all messages from others
+                        const otherMessages = document.querySelectorAll('.message-bubble.other-message');
+                        
+                        otherMessages.forEach(messageEl => {
+                            const messageText = messageEl.querySelector('p.leading-relaxed');
+                            const translationEl = messageEl.querySelector('.translated-message');
+                            
+                            // Get original text (if available) or current text
+                            const originalText = messageText.getAttribute('data-original') || messageText.textContent;
+                            
+                            // Show translating state
+                            messageText.textContent = 'Translating...';
+                            
+                            // Translate to new language
+                            translateText(originalText, selectedLanguage)
+                                .then(translatedText => {
+                                    // Update main message content
+                                    messageText.textContent = translatedText;
+                                    
+                                    // Show original in translation area
+                                    if (translationEl) {
+                                        translationEl.innerHTML = `<span class="text-xs text-slate-400">Original: </span>${originalText}`;
+                                        translationEl.classList.remove('hidden');
+                                    }
+                                })
+                                .catch(err => {
+                                    console.error('Translation error:', err);
+                                    messageText.textContent = originalText; // Revert to original on error
+                                    if (translationEl) {
+                                        translationEl.textContent = 'Translation failed';
+                                        translationEl.classList.remove('hidden');
+                                    }
+                                });
+                        });
+                    }
                 });
             });
             
@@ -463,9 +618,9 @@
                     const formData = new FormData();
                     Array.from(files).forEach((file) => {
                         // Handle APNG files specifically
-                        if (file.name.toLowerCase().endsWith('.apng') || file.name.toLowerCase().endsWith('.png')) {
+                        if (file.name.toLowerCase().endswith('.apng') || file.name.toLowerCase().endswith('.png')) {
                             const renamedFile = new File([file], file.name, { 
-                                type: file.name.toLowerCase().endsWith('.apng') ? 'image/apng' : 'image/png' 
+                                type: file.name.toLowerCase().endswith('.apng') ? 'image/apng' : 'image/png' 
                             });
                             formData.append('files', renamedFile);
                         } else {
@@ -560,11 +715,11 @@
                     const fileName = file.name || '';
                     
                     if (fileType.startsWith('image/') || 
-                        fileName.toLowerCase().endsWith('.png') || 
-                        fileName.toLowerCase().endsWith('.jpg') ||
-                        fileName.toLowerCase().endsWith('.jpeg') ||
-                        fileName.toLowerCase().endsWith('.gif') ||
-                        fileName.toLowerCase().endsWith('.apng')) {
+                        fileName.toLowerCase().endswith('.png') || 
+                        fileName.toLowerCase().endswith('.jpg') ||
+                        fileName.toLowerCase().endswith('.jpeg') ||
+                        fileName.toLowerCase().endswith('.gif') ||
+                        fileName.toLowerCase().endswith('.apng')) {
                         fileIcon = 'fa-file-image';
                         
                         // If we have a URL from the server, show the image
@@ -653,28 +808,32 @@
                 const messageText = messageInput.value.trim();
                 
                 if (messageText) {
-                    // Add user message (without translation initially)
+                    // Add user message to the UI
                     const userMessageElement = addMessage(messageText, true);
                     messageInput.value = '';
                     
-                    // Broadcast message to all connected users
+                    // Determine the source language - using 'EN' as default for simplicity
+                    // In a real app, you might want to detect the language
+                    const sourceLang = 'EN';
+                    
+                    // Broadcast message to all connected users with source language info
                     socket.emit('chat_message', {
                         userId: userId,
                         userName: userName,
-                        message: messageText
+                        message: messageText,
+                        sourceLang: sourceLang
                     });
                     
-                    // Get translation for user message if translation is enabled
-                    if (selectedLanguage) {
-                        // Show loading state for translation
+                    // For consistency, if the user has translation enabled,
+                    // show their own message in their selected language too
+                    if (selectedLanguage && selectedLanguage !== sourceLang) {
                         const translationElement = userMessageElement.querySelector('.translated-message');
                         translationElement.textContent = 'Translating...';
                         translationElement.classList.remove('hidden');
                         
                         translateText(messageText, selectedLanguage)
                             .then(translatedText => {
-                                // Update translation when received
-                                translationElement.textContent = translatedText;
+                                translationElement.innerHTML = `<span class="text-xs text-slate-400">Translation: </span>${translatedText}`;
                             })
                             .catch(err => {
                                 console.error('Translation error:', err);
@@ -684,13 +843,12 @@
                 }
             });
             
-            // Function to call DeepL API for translation
+            // Function to call translation API
             async function translateText(text, targetLang) {
                 console.log(`Requesting translation to ${targetLang}: "${text}"`);
                 
                 try {
-                    // Mock translation for testing without server
-                    // This will work even if server translation fails
+                    // Mock translations as fallback
                     const mockTranslations = {
                         'EN': 'English: ',
                         'ES': 'Español: ',
@@ -737,6 +895,7 @@
                 }
             }
             
+            // Updated addMessage function
             function addMessage(text, isUser, translatedText = '', senderName = null) {
                 const now = new Date();
                 const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -754,7 +913,7 @@
                             <div class="w-8 h-8 rounded-full user-avatar flex items-center justify-center text-xs">ME</div>
                         </div>
                         <p class="leading-relaxed">${text}</p>
-                        <div class="translated-message ${selectedLanguage ? '' : 'hidden'}">
+                        <div class="translated-message hidden">
                             ${translatedText || ''}
                         </div>
                     `;
@@ -784,6 +943,13 @@
                 
                 // Return the message element so we can update it later
                 return messageDiv;
+            }
+            
+            // Function to play a notification sound (placeholder)
+            function playMessageSound() {
+                // Implement sound notification if available
+                // For example: new Audio('notification.mp3').play();
+                console.log('Message notification sound would play here');
             }
             
             function generateUserId() {
