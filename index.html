@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GlobalTalk - Multilingual Chat App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body class="text-white">
+    <div class="container mx-auto max-w-4xl h-screen flex flex-col">
+        <!-- Header -->
+        <header class="app-header p-4 rounded-b-2xl shadow-lg flex items-center justify-between mb-2">
+            <div class="flex items-center space-x-3">
+                <div class="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg">
+                    <i class="fas fa-globe text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-blue-600">GlobalTalk</h1>
+                    <p class="text-xs text-slate-400">Connected to translation service</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-4">
+                <div id="connection-status" class="px-3 py-1 rounded-full bg-yellow-600 text-xs mr-2">
+                    <span>Connecting...</span>
+                </div>
+                <div class="relative group">
+                    <button id="translate-toggle" class="bg-slate-700 hover:bg-slate-600 px-5 py-2.5 rounded-full flex items-center space-x-2 transition-all shadow-lg">
+                        <i class="fas fa-language text-blue-400"></i>
+                        <span class="ml-2">Translate</span>
+                    </button>
+                    <div id="language-dropdown" class="hidden absolute right-0 mt-3 w-56 bg-slate-800 rounded-xl shadow-2xl z-10 p-3 border border-slate-700">
+                        <div class="text-xs text-slate-400 px-2 py-2 border-b border-slate-700 mb-2">Translate to:</div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button class="language-selector p-3 rounded-lg hover:bg-slate-700 transition-all" data-lang="EN">
+                                <i class="fas fa-language mr-2 text-blue-400"></i>English
+                            </button>
+                            <button class="language-selector p-3 rounded-lg hover:bg-slate-700 transition-all" data-lang="ES">
+                                <i class="fas fa-language mr-2 text-blue-400"></i>Spanish
+                            </button>
+                            <button class="language-selector p-3 rounded-lg hover:bg-slate-700 transition-all" data-lang="FR">
+                                <i class="fas fa-language mr-2 text-blue-400"></i>French
+                            </button>
+                            <button class="language-selector p-3 rounded-lg hover:bg-slate-700 transition-all" data-lang="DE">
+                                <i class="fas fa-language mr-2 text-blue-400"></i>German
+                            </button>
+                            <button class="language-selector p-3 rounded-lg hover:bg-slate-700 transition-all" data-lang="IT">
+                                <i class="fas fa-language mr-2 text-blue-400"></i>Italian
+                            </button>
+                            <button class="language-selector p-3 rounded-lg hover:bg-slate-700 transition-all" data-lang="JA">
+                                <i class="fas fa-language mr-2 text-blue-400"></i>Japanese
+                            </button>
+                            <button class="language-selector p-3 rounded-lg hover:bg-slate-700 transition-all" data-lang="KO">
+                                <i class="fas fa-language mr-2 text-blue-400"></i>Korean
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <button class="bg-slate-700 hover:bg-slate-600 w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-lg">
+                    <i class="fas fa-cog text-blue-400"></i>
+                </button>
+            </div>
+        </header>
+        
+        <!-- Chat area -->
+        <div class="chat-container overflow-y-auto p-5 space-y-6 flex-grow bg-gradient-to-b from-slate-900 to-slate-800 rounded-xl mx-2">
+            <!-- Welcome message -->
+            <div class="welcome-container text-center py-8">
+                <div class="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center mb-6 shadow-lg">
+                    <i class="fas fa-comments text-3xl"></i>
+                </div>
+                <h2 class="text-2xl font-bold mb-3 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-blue-600">Welcome to GlobalTalk!</h2>
+                <p class="text-slate-300 max-w-md mx-auto leading-relaxed">Start chatting with people around the world. Use the translate button to convert messages to your preferred language.</p>
+            </div>
+            
+            <!-- Sample messages -->
+            <div class="message-bubble other-message p-5 w-fit">
+                <div class="flex items-center space-x-3 mb-2">
+                    <div class="w-8 h-8 rounded-full other-avatar flex items-center justify-center text-xs">JD</div>
+                    <div>
+                        <span class="font-medium">John Doe</span>
+                        <span class="text-xs text-slate-300 ml-2">10:30 AM</span>
+                    </div>
+                </div>
+                <p class="leading-relaxed">Hello there! How are you doing today?</p>
+                <div class="translated-message hidden">
+                    ¡Hola! ¿Cómo estás hoy?
+                </div>
+            </div>
+            
+            <div class="message-bubble user-message p-5 w-fit">
+                <div class="flex items-center space-x-3 mb-2 justify-end">
+                    <div>
+                        <span class="text-xs text-slate-300 mr-2">10:32 AM</span>
+                        <span class="font-medium">You</span>
+                    </div>
+                    <div class="w-8 h-8 rounded-full user-avatar flex items-center justify-center text-xs">ME</div>
+                </div>
+                <p class="leading-relaxed">I'm doing great! Just working on this new chat app.</p>
+                <div class="translated-message hidden">
+                    ¡Estoy genial! Solo estoy trabajando en esta nueva aplicación de chat.
+                </div>
+            </div>
+            
+            <div class="message-bubble other-message p-5 w-fit">
+                <div class="flex items-center space-x-3 mb-2">
+                    <div class="w-8 h-8 rounded-full other-avatar flex items-center justify-center text-xs">JD</div>
+                    <div>
+                        <span class="font-medium">John Doe</span>
+                        <span class="text-xs text-slate-300 ml-2">10:33 AM</span>
+                    </div>
+                </div>
+                <p class="leading-relaxed">That sounds interesting! What makes it special?</p>
+                <div class="translated-message hidden">
+                    ¡Eso suena interesante! ¿Qué lo hace especial?
+                </div>
+            </div>
+            
+            <div id="typing-indicator" class="typing-indicator hidden">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            </div>
+        </div>
+        
+        <!-- Message input -->
+        <div class="message-form-container p-4 rounded-t-2xl mt-2">
+            <form id="message-form" class="flex space-x-3">
+                <div class="flex-grow relative">
+                    <input 
+                        id="message-input" 
+                        type="text" 
+                        placeholder="Type your message..." 
+                        class="message-input w-full bg-slate-700 rounded-full py-4 px-5 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-lg"
+                        autocomplete="off"
+                    >
+                    <div class="absolute right-4 top-4 flex space-x-3">
+                        <button type="button" class="text-slate-400 hover:text-white transition-all">
+                            <i class="far fa-smile"></i>
+                        </button>
+                        <button type="button" id="file-button" class="text-slate-400 hover:text-white transition-all">
+                            <i class="fas fa-paperclip"></i>
+                        </button>
+                        <input type="file" id="file-input" class="hidden" multiple>
+                    </div>
+                </div>
+                <button 
+                    type="submit" 
+                    class="bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-lg button-glow"
+                >
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Socket.io connection
+            const connectionStatus = document.getElementById('connection-status');
+            let userId = localStorage.getItem('chat_user_id') || generateUserId();
+            let userName = localStorage.getItem('chat_user_name') || 'User_' + userId.substring(0, 5);
+            
+            // Store user ID for future sessions
+            localStorage.setItem('chat_user_id', userId);
+            localStorage.setItem('chat_user_name', userName);
+            
+            // Connection events
+            socket.on('connect', () => {
+                connectionStatus.className = 'px-3 py-1 rounded-full bg-green-600 text-xs mr-2';
+                connectionStatus.innerHTML = '<span>Connected</span>';
+                
+                // Join the global chat
+                socket.emit('join', {
+                    userId: userId,
+                    userName: userName
+                });
+                
+                // Show active connection message in chat
+                const connectionMsg = document.createElement('div');
+                connectionMsg.className = 'text-center py-2 text-xs text-slate-400';
+                connectionMsg.textContent = 'Connected to global chat';
+                chatContainer.appendChild(connectionMsg);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            });
+            
+            socket.on('disconnect', () => {
+                connectionStatus.className = 'px-3 py-1 rounded-full bg-red-600 text-xs mr-2';
+                connectionStatus.innerHTML = '<span>Disconnected</span>';
+                
+                // Show disconnection message in chat
+                const disconnectionMsg = document.createElement('div');
+                disconnectionMsg.className = 'text-center py-2 text-xs text-slate-400';
+                disconnectionMsg.textContent = 'Disconnected from global chat';
+                chatContainer.appendChild(disconnectionMsg);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            });
+            
+            socket.on('user_joined', (data) => {
+                // Show user joined notification
+                const joinMsg = document.createElement('div');
+                joinMsg.className = 'text-center py-2 text-xs text-blue-400';
+                joinMsg.textContent = `${data.userName} joined the chat`;
+                chatContainer.appendChild(joinMsg);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            });
+            
+            socket.on('user_left', (data) => {
+                // Show user left notification
+                const leftMsg = document.createElement('div');
+                leftMsg.className = 'text-center py-2 text-xs text-slate-400';
+                leftMsg.textContent = `${data.userName} left the chat`;
+                chatContainer.appendChild(leftMsg);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            });
+            
+            socket.on('chat_message', (data) => {
+                // Receive message from another user
+                if (data.userId !== userId) {
+                    const otherMessageElement = addMessage(data.message, false, '', data.userName);
+                    
+                    // Translate received message if translation is enabled
+                    if (selectedLanguage) {
+                        const translationElement = otherMessageElement.querySelector('.translated-message');
+                        translationElement.textContent = 'Translating...';
+                        translationElement.classList.remove('hidden');
+                        
+                        translateText(data.message, selectedLanguage)
+                            .then(translatedText => {
+                                translationElement.textContent = translatedText;
+                            })
+                            .catch(err => {
+                                console.error('Translation error:', err);
+                                translationElement.textContent = 'Translation failed';
+                            });
+                    }
+                }
+            });
+            
+            socket.on('file_shared', (data) => {
+                // Handle receiving file metadata (not the actual file)
+                if (data.userId !== userId) {
+                    // Create a representation of the file that was shared
+                    createFileShareMessage(data.files, false, data.userName);
+                }
+            });
+            
+            // Toggle translation dropdown
+            const translateToggle = document.getElementById('translate-toggle');
+            const languageDropdown = document.getElementById('language-dropdown');
+            
+            translateToggle.addEventListener('click', function() {
+                languageDropdown.classList.toggle('hidden');
+            });
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function(event) {
+                if (!translateToggle.contains(event.target) && !languageDropdown.contains(event.target)) {
+                    languageDropdown.classList.add('hidden');
+                }
+            });
+            
+            // Language selection
+            const languageSelectors = document.querySelectorAll('.language-selector');
+            let selectedLanguage = 'ES'; // Default to Spanish
+            
+            languageSelectors.forEach(selector => {
+                selector.addEventListener('click', function() {
+                    selectedLanguage = this.dataset.lang;
+                    translateToggle.innerHTML = `<i class="fas fa-language"></i><span>${this.dataset.lang}</span>`;                    
+                    languageDropdown.classList.add('hidden');
+                    
+                    // Show/hide translations based on selection
+                    const translatedMessages = document.querySelectorAll('.translated-message');
+                    translatedMessages.forEach(msg => {
+                        if (selectedLanguage) {
+                            msg.classList.remove('hidden');
+                        } else {
+                            msg.classList.add('hidden');
+                        }
+                    });
+                });
+            });
+            
+            // Message form submission
+            const messageForm = document.getElementById('message-form');
+            const messageInput = document.getElementById('message-input');
+            const chatContainer = document.querySelector('.chat-container');
+            const typingIndicator = document.getElementById('typing-indicator');
+            
+            // File upload handling
+            const fileButton = document.getElementById('file-button');
+            const fileInput = document.getElementById('file-input');
+            let selectedFiles = [];
+            
+            fileButton.addEventListener('click', function() {
+                fileInput.click();
+            });
+            
+            fileInput.addEventListener('change', function() {
+                if (this.files.length > 0) {
+                    selectedFiles = Array.from(this.files);
+                    // Send files immediately
+                    handleFileUpload(selectedFiles);
+                    // Reset input to allow selecting the same file again
+                    this.value = '';
+                }
+            });
+            
+            function handleFileUpload(files) {
+                if (files.length === 0) return;
+                
+                // Create message with file attachments
+                const userMessageElement = createFileMessage(files, true);
+                
+                // Create shareable file metadata
+                const fileMetadata = Array.from(files).map(file => ({
+                    name: file.name,
+                    size: file.size,
+                    type: file.type
+                }));
+                
+                // Broadcast file metadata to other users
+                socket.emit('file_shared', {
+                    userId: userId,
+                    userName: userName,
+                    files: fileMetadata
+                });
+                
+                // Reset selected files
+                selectedFiles = [];
+            }
+            
+            function createFileShareMessage(fileMetadata, isUser, senderName = null) {
+                const now = new Date();
+                const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message-bubble ${isUser ? 'user-message' : 'other-message'} p-5 w-fit`;
+                
+                // Create message header
+                if (isUser) {
+                    messageDiv.innerHTML = `
+                        <div class="flex items-center space-x-3 mb-2 justify-end">
+                            <div>
+                                <span class="text-xs text-slate-300 mr-2">${timeString}</span>
+                                <span class="font-medium">You</span>
+                            </div>
+                            <div class="w-8 h-8 rounded-full user-avatar flex items-center justify-center text-xs">ME</div>
+                        </div>
+                    `;
+                } else {
+                    const initials = senderName ? getInitials(senderName) : 'OT';
+                    messageDiv.innerHTML = `
+                        <div class="flex items-center space-x-3 mb-2">
+                            <div class="w-8 h-8 rounded-full other-avatar flex items-center justify-center text-xs">${initials}</div>
+                            <div>
+                                <span class="font-medium">${senderName || 'Other User'}</span>
+                                <span class="text-xs text-slate-300 ml-2">${timeString}</span>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // Add file attachments
+                const filesContainer = document.createElement('div');
+                filesContainer.className = 'files-container space-y-2';
+                
+                fileMetadata.forEach(file => {
+                    const fileItem = document.createElement('div');
+                    fileItem.className = 'file-item flex items-center p-2 bg-slate-800 bg-opacity-50 rounded-lg';
+                    
+                    // Choose icon based on file type
+                    let fileIcon = 'fa-file';
+                    if (file.type.startsWith('image/')) {
+                        fileIcon = 'fa-file-image';
+                    } else if (file.type.startsWith('video/')) {
+                        fileIcon = 'fa-file-video';
+                    } else if (file.type.startsWith('audio/')) {
+                        fileIcon = 'fa-file-audio';
+                    } else if (file.type.includes('pdf')) {
+                        fileIcon = 'fa-file-pdf';
+                    } else if (file.type.includes('word') || file.name.endsWith('.doc') || file.name.endsWith('.docx')) {
+                        fileIcon = 'fa-file-word';
+                    }
+                    
+                    fileItem.innerHTML = `
+                        <i class="fas ${fileIcon} text-blue-400 mr-3"></i>
+                        <div class="flex-grow overflow-hidden">
+                            <div class="text-sm font-medium text-white truncate">${file.name}</div>
+                            <div class="text-xs text-slate-400">${formatFileSize(file.size)}</div>
+                        </div>
+                    `;
+                    
+                    filesContainer.appendChild(fileItem);
+                });
+                
+                messageDiv.appendChild(filesContainer);
+                
+                // Insert before typing indicator
+                chatContainer.insertBefore(messageDiv, typingIndicator);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                
+                return messageDiv;
+            }
+            
+            function formatFileSize(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+            
+            messageForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const messageText = messageInput.value.trim();
+                
+                if (messageText) {
+                    // Add user message (without translation initially)
+                    const userMessageElement = addMessage(messageText, true);
+                    messageInput.value = '';
+                    
+                    // Broadcast message to all connected users
+                    socket.emit('chat_message', {
+                        userId: userId,
+                        userName: userName,
+                        message: messageText
+                    });
+                    
+                    // Get translation for user message if translation is enabled
+                    if (selectedLanguage) {
+                        // Show loading state for translation
+                        const translationElement = userMessageElement.querySelector('.translated-message');
+                        translationElement.textContent = 'Translating...';
+                        translationElement.classList.remove('hidden');
+                        
+                        translateText(messageText, selectedLanguage)
+                            .then(translatedText => {
+                                // Update translation when received
+                                translationElement.textContent = translatedText;
+                            })
+                            .catch(err => {
+                                console.error('Translation error:', err);
+                                translationElement.textContent = 'Translation failed';
+                            });
+                    }
+                }
+            });
+            
+            // Function to call DeepL API for translation
+            async function translateText(text, targetLang) {
+                console.log(`Requesting translation to ${targetLang}: "${text}"`);
+                
+                try {
+                    // Send translation request to our Node.js server instead of directly to DeepL
+                    const response = await fetch('/translate', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            text: text,
+                            targetLang: targetLang
+                        })
+                    });
+                    
+                    console.log('Server response status:', response.status);
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        console.error('Translation server error:', errorData);
+                        throw new Error(`Translation failed (${response.status}): ${errorData.error || 'Unknown error'}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log('Translation response:', data);
+                    
+                    if (data && data.translation) {
+                        return data.translation;
+                    } else {
+                        throw new Error('Invalid translation response format');
+                    }
+                } catch (error) {
+                    console.error('Translation error:', error);
+                    throw error;
+                }
+            }
+            
+            function addMessage(text, isUser, translatedText = '', senderName = null) {
+                const now = new Date();
+                const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message-bubble ${isUser ? 'user-message' : 'other-message'} p-5 w-fit`;
+                
+                if (isUser) {
+                    messageDiv.innerHTML = `
+                        <div class="flex items-center space-x-3 mb-2 justify-end">
+                            <div>
+                                <span class="text-xs text-slate-300 mr-2">${timeString}</span>
+                                <span class="font-medium">You</span>
+                            </div>
+                            <div class="w-8 h-8 rounded-full user-avatar flex items-center justify-center text-xs">ME</div>
+                        </div>
+                        <p class="leading-relaxed">${text}</p>
+                        <div class="translated-message ${selectedLanguage ? '' : 'hidden'}">
+                            ${translatedText || ''}
+                        </div>
+                    `;
+                } else {
+                    const initials = senderName ? getInitials(senderName) : 'OT';
+                    messageDiv.innerHTML = `
+                        <div class="flex items-center space-x-3 mb-2">
+                            <div class="w-8 h-8 rounded-full other-avatar flex items-center justify-center text-xs">${initials}</div>
+                            <div>
+                                <span class="font-medium">${senderName || 'Other User'}</span>
+                                <span class="text-xs text-slate-300 ml-2">${timeString}</span>
+                            </div>
+                        </div>
+                        <p class="leading-relaxed">${text}</p>
+                        <div class="translated-message ${selectedLanguage ? '' : 'hidden'}">
+                            ${translatedText || ''}
+                        </div>
+                    `;
+                }
+                
+                // Insert before typing indicator
+                chatContainer.insertBefore(messageDiv, typingIndicator);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                
+                // Return the message element so we can update it later
+                return messageDiv;
+            }
+            
+            function generateUserId() {
+                return 'user_' + Math.random().toString(36).substr(2, 9);
+            }
+            
+            function getInitials(name) {
+                return name.split(' ')
+                    .map(part => part.charAt(0).toUpperCase())
+                    .join('')
+                    .substring(0, 2);
+            }
+            
+            // Initial scroll to bottom
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            
+            // Update this function to connect to your chosen free hosting service
+            function connectToServer() {
+                // For local testing, use:
+                // const socket = io('http://localhost:3000');
+                
+                // For deployment on Render:
+                const socket = io('https://your-globaltalk-app.onrender.com'); 
+                
+                return socket;
+            }
+            
+            // Use this function instead of direct connection
+            const socket = connectToServer();
+        });
+    </script>
+</body>
+</html>
