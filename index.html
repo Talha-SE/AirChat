@@ -2,12 +2,84 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>GlobalTalk - Multilingual Chat App</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        /* Mobile-specific styles */
+        @media (max-width: 640px) {
+            .container {
+                padding: 0 !important;
+                height: 100vh !important;
+                max-width: 100% !important;
+                width: 100% !important;
+            }
+            
+            .app-header {
+                padding: 0.75rem !important;
+                border-radius: 0 0 1rem 1rem !important;
+            }
+            
+            .chat-container {
+                margin: 0 !important;
+                border-radius: 0 !important;
+                padding: 0.75rem !important;
+            }
+            
+            .message-bubble {
+                max-width: 85% !important;
+                padding: 0.75rem !important;
+            }
+            
+            .message-form-container {
+                padding: 0.75rem !important;
+                border-radius: 1rem 1rem 0 0 !important;
+            }
+            
+            #language-dropdown {
+                right: -2rem;
+            }
+            
+            /* Adjust header for smaller screens */
+            .app-header h1 {
+                font-size: 1.2rem !important;
+            }
+            
+            .app-header .w-12 {
+                width: 2.5rem !important;
+                height: 2.5rem !important;
+            }
+        }
+        
+        /* Touch-friendly improvements */
+        button, .language-selector, .file-item, a {
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+        
+        /* Add mobile app feel */
+        @media (display-mode: standalone) {
+            body {
+                overscroll-behavior: none;
+            }
+        }
+        
+        /* Improve scrolling */
+        .chat-container {
+            -webkit-overflow-scrolling: touch;
+            scroll-behavior: smooth;
+            overscroll-behavior-y: contain;
+        }
+        
+        /* Fix image display on mobile */
+        img.max-h-64 {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
 </head>
 <body class="text-white">
     <div class="container mx-auto max-w-4xl h-screen flex flex-col">
@@ -207,7 +279,53 @@
             // Receive active users list
             socket.on('active_users', (users) => {
                 console.log('Active users:', users);
-                // You could display this in the UI if desired
+                // Update active users count in UI
+                const userCount = users.length;
+                const statusElem = document.getElementById('connection-status');
+                if (userCount > 1) {
+                    statusElem.innerHTML = `<span>Connected (${userCount} users)</span>`;
+                } else {
+                    statusElem.innerHTML = `<span>Connected</span>`;
+                }
+            });
+            
+            // Debug incoming messages
+            socket.onAny((event, ...args) => {
+                console.log(`[Socket Event] ${event}:`, args);
+            });
+            
+            // Improved chat message handling
+            socket.on('chat_message', (data) => {
+                console.log('Received chat message:', data);
+                
+                // Only process messages from other users
+                if (data.userId && data.userId !== userId) {
+                    console.log('Adding message from:', data.userName);
+                    
+                    // Add message to chat
+                    const otherMessageElement = addMessage(data.message, false, '', data.userName);
+                    
+                    // Play notification sound
+                    playMessageSound();
+                    
+                    // Translate received message if translation is enabled
+                    if (selectedLanguage) {
+                        const translationElement = otherMessageElement.querySelector('.translated-message');
+                        translationElement.textContent = 'Translating...';
+                        translationElement.classList.remove('hidden');
+                        
+                        translateText(data.message, selectedLanguage)
+                            .then(translatedText => {
+                                translationElement.textContent = translatedText;
+                            })
+                            .catch(err => {
+                                console.error('Translation error:', err);
+                                translationElement.textContent = 'Translation failed';
+                            });
+                    }
+                } else {
+                    console.log('Ignoring own message or invalid message');
+                }
             });
             
             // Update this function to connect to your chosen free hosting service with reconnection
@@ -263,8 +381,6 @@
                         }, 2000);
                     }
                 });
-                
-                // ...existing code...
                 
                 return socket;
             }
@@ -347,9 +463,9 @@
                     const formData = new FormData();
                     Array.from(files).forEach((file) => {
                         // Handle APNG files specifically
-                        if (file.name.toLowerCase().endswith('.apng') || file.name.toLowerCase().endswith('.png')) {
+                        if (file.name.toLowerCase().endsWith('.apng') || file.name.toLowerCase().endsWith('.png')) {
                             const renamedFile = new File([file], file.name, { 
-                                type: file.name.toLowerCase().endswith('.apng') ? 'image/apng' : 'image/png' 
+                                type: file.name.toLowerCase().endsWith('.apng') ? 'image/apng' : 'image/png' 
                             });
                             formData.append('files', renamedFile);
                         } else {
@@ -446,9 +562,9 @@
                     if (fileType.startsWith('image/') || 
                         fileName.toLowerCase().endsWith('.png') || 
                         fileName.toLowerCase().endsWith('.jpg') ||
-                        fileName.toLowerCase().endswith('.jpeg') ||
-                        fileName.toLowerCase().endswith('.gif') ||
-                        fileName.toLowerCase().endswith('.apng')) {
+                        fileName.toLowerCase().endsWith('.jpeg') ||
+                        fileName.toLowerCase().endsWith('.gif') ||
+                        fileName.toLowerCase().endsWith('.apng')) {
                         fileIcon = 'fa-file-image';
                         
                         // If we have a URL from the server, show the image
@@ -643,12 +759,15 @@
                         </div>
                     `;
                 } else {
-                    const initials = senderName ? getInitials(senderName) : 'OT';
+                    // Make sure we have valid sender information
+                    const displayName = senderName || 'Other User';
+                    const initials = getInitials(displayName);
+                    
                     messageDiv.innerHTML = `
                         <div class="flex items-center space-x-3 mb-2">
                             <div class="w-8 h-8 rounded-full other-avatar flex items-center justify-center text-xs">${initials}</div>
                             <div>
-                                <span class="font-medium">${senderName || 'Other User'}</span>
+                                <span class="font-medium">${displayName}</span>
                                 <span class="text-xs text-slate-300 ml-2">${timeString}</span>
                             </div>
                         </div>
@@ -672,6 +791,7 @@
             }
             
             function getInitials(name) {
+                if (!name) return 'OT';
                 return name.split(' ')
                     .map(part => part.charAt(0).toUpperCase())
                     .join('')
