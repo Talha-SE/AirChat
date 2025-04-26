@@ -249,19 +249,6 @@
         
         <!-- Chat area -->
         <div class="chat-container overflow-y-auto p-5 space-y-6 flex-grow bg-gradient-to-b from-slate-900 to-slate-800 rounded-xl mx-2">
-            <!-- Loading indicator for older messages -->
-            <div id="loading-older-messages" class="text-center py-2 hidden">
-                <div class="inline-block animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-blue-400"></div>
-                <span class="text-xs text-blue-400 ml-2">Loading older messages...</span>
-            </div>
-            
-            <!-- Load more button - shown when there are more messages to load -->
-            <div id="load-more-container" class="text-center py-2 hidden">
-                <button id="load-more-btn" class="bg-blue-600 hover:bg-blue-700 text-white text-xs py-1 px-3 rounded-full">
-                    Load older messages
-                </button>
-            </div>
-            
             <!-- Welcome message -->
             <div class="welcome-container text-center py-8">
                 <div class="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center mb-6 shadow-lg">
@@ -360,52 +347,10 @@
             // Socket.io connection
             const connectionStatus = document.getElementById('connection-status');
             let userId = localStorage.getItem('chat_user_id') || generateUserId();
-            let userName = localStorage.getItem('chat_user_name') || '';
+            let userName = localStorage.getItem('chat_user_name') || ''; // Empty to get server-generated name
             
             // Store user ID for future sessions
             localStorage.setItem('chat_user_id', userId);
-            
-            // Variables for message history pagination
-            let oldestMessageTimestamp = null;
-            let isLoadingOlderMessages = false;
-            let hasMoreMessages = true;
-            
-            // Elements for loading older messages
-            const chatContainer = document.querySelector('.chat-container');
-            const loadingIndicator = document.getElementById('loading-older-messages');
-            const loadMoreContainer = document.getElementById('load-more-container');
-            const loadMoreBtn = document.getElementById('load-more-btn');
-            
-            // Add scroll event listener for infinite scrolling
-            chatContainer.addEventListener('scroll', function() {
-                // If we're near the top and not currently loading and there are more messages
-                if (chatContainer.scrollTop < 100 && !isLoadingOlderMessages && hasMoreMessages && oldestMessageTimestamp) {
-                    loadOlderMessages();
-                }
-            });
-            
-            // Handle click on load more button as an alternative to scroll
-            loadMoreBtn.addEventListener('click', function() {
-                loadOlderMessages();
-            });
-            
-            // Function to load older messages
-            function loadOlderMessages() {
-                if (isLoadingOlderMessages || !hasMoreMessages || !oldestMessageTimestamp) return;
-                
-                isLoadingOlderMessages = true;
-                loadingIndicator.classList.remove('hidden');
-                loadMoreContainer.classList.add('hidden');
-                
-                // Request older messages from the server
-                socket.emit('fetch_older_messages', {
-                    before: oldestMessageTimestamp,
-                    limit: 20
-                });
-                
-                // Track scroll position before adding new messages
-                const scrollHeight = chatContainer.scrollHeight;
-            }
             
             // Connection events
             socket.on('connect', () => {
@@ -426,101 +371,12 @@
                 chatContainer.scrollTop = chatContainer.scrollHeight;
             });
             
-            // Handle older messages from the server
-            socket.on('older_messages', (data) => {
-                isLoadingOlderMessages = false;
-                loadingIndicator.classList.add('hidden');
-                
-                // Track scroll position before adding new messages
-                const scrollHeight = chatContainer.scrollHeight;
-                
-                if (data.messages && data.messages.length > 0) {
-                    // Update the oldest timestamp
-                    oldestMessageTimestamp = data.oldestTimestamp;
-                    hasMoreMessages = data.hasMore;
-                    
-                    // Insert messages at the top of the chat
-                    const fragment = document.createDocumentFragment();
-                    
-                    data.messages.forEach(msg => {
-                        if (msg.isFileShare && msg.files && msg.files.length > 0) {
-                            // It's a file share message
-                            const fileElement = createFileShareMessage(msg.files, msg.userId === userId, msg.userName);
-                            fileElement.setAttribute('data-real-message', 'true');
-                            fragment.appendChild(fileElement);
-                        } else {
-                            // It's a text message
-                            const isUser = msg.userId === userId;
-                            const messageElement = createMessageElement(
-                                msg.message, 
-                                isUser, 
-                                '', 
-                                isUser ? null : msg.userName
-                            );
-                            messageElement.setAttribute('data-real-message', 'true');
-                            fragment.appendChild(messageElement);
-                            
-                            // If translation is enabled and it's not user's message
-                            if (selectedLanguage && !isUser) {
-                                const messageTextElement = messageElement.querySelector('p.leading-relaxed');
-                                const translationElement = messageElement.querySelector('.translated-message');
-                                
-                                // Store the original text as data attribute
-                                messageTextElement.setAttribute('data-original', msg.message);
-                                
-                                // Translate the message
-                                translateText(msg.message, selectedLanguage)
-                                    .then(translatedText => {
-                                        // Update the main message content with translation
-                                        messageTextElement.textContent = translatedText;
-                                        
-                                        // Show original text in translation element
-                                        if (translationElement) {
-                                            translationElement.innerHTML = `<span class="text-xs text-slate-400">Original: </span>${msg.message}`;
-                                            translationElement.classList.remove('hidden');
-                                        }
-                                    })
-                                    .catch(err => {
-                                        console.error('Translation error:', err);
-                                    });
-                            }
-                        }
-                    });
-                    
-                    // Insert at the beginning of the container, after the loading indicator
-                    const firstChild = chatContainer.firstChild;
-                    chatContainer.insertBefore(fragment, firstChild);
-                    
-                    // Maintain scroll position after adding new content
-                    chatContainer.scrollTop = chatContainer.scrollHeight - scrollHeight;
-                    
-                    // Show or hide load more button based on if there are more messages
-                    if (hasMoreMessages) {
-                        loadMoreContainer.classList.remove('hidden');
-                    } else {
-                        loadMoreContainer.classList.add('hidden');
-                    }
-                } else {
-                    // No more messages
-                    hasMoreMessages = false;
-                    loadMoreContainer.classList.add('hidden');
-                }
-            });
-            
-            // Handle message history from server - updated to handle enhanced data
-            socket.on('message_history', (data) => {
-                console.log('Received message history:', data.messages.length, 'messages');
-                
-                // Store information for pagination
-                hasMoreMessages = data.hasMore;
-                oldestMessageTimestamp = data.oldestTimestamp;
-                
-                if (hasMoreMessages) {
-                    loadMoreContainer.classList.remove('hidden');
-                }
+            // Handle message history from server
+            socket.on('message_history', (messages) => {
+                console.log('Received message history:', messages.length, 'messages');
                 
                 // Clear welcome message if we have history
-                if (data.messages.length > 0) {
+                if (messages.length > 0) {
                     const welcomeContainer = document.querySelector('.welcome-container');
                     if (welcomeContainer) {
                         welcomeContainer.remove();
@@ -537,11 +393,11 @@
                     // Add history notification
                     const historyMsg = document.createElement('div');
                     historyMsg.className = 'text-center py-2 text-xs text-blue-400';
-                    historyMsg.textContent = `Showing last ${data.messages.length} messages`;
+                    historyMsg.textContent = `Showing last ${messages.length} messages`;
                     chatContainer.appendChild(historyMsg);
                     
                     // Display each message
-                    data.messages.forEach(msg => {
+                    messages.forEach(msg => {
                         if (msg.isFileShare && msg.files && msg.files.length > 0) {
                             // It's a file share message
                             createFileShareMessage(msg.files, msg.userId === userId, msg.userName);
@@ -583,73 +439,88 @@
                 }
             });
             
-            // Error handling from server
-            socket.on('error', (data) => {
-                console.error('Server error:', data.message);
-                
-                // Show error in chat
-                const errorMsg = document.createElement('div');
-                errorMsg.className = 'text-center py-2 text-xs text-red-400';
-                errorMsg.textContent = `Error: ${data.message}`;
-                chatContainer.appendChild(errorMsg);
-                chatContainer.scrollTop = chatContainer.scrollHeight;
+            // Handle name assignment from server
+            socket.on('name_assigned', (data) => {
+                if (data.userName) {
+                    userName = data.userName;
+                    localStorage.setItem('chat_user_name', userName);
+                    
+                    // Update UI to show assigned name
+                    const nameMsg = document.createElement('div');
+                    nameMsg.className = 'text-center py-2 text-xs text-blue-400';
+                    nameMsg.textContent = `You are chatting as: ${userName}`;
+                    chatContainer.appendChild(nameMsg);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
             });
             
-            // Create a reusable function for creating message elements
-            function createMessageElement(text, isUser, translatedText = '', senderName = null) {
-                const now = new Date();
-                const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `message-bubble ${isUser ? 'user-message' : 'other-message'} p-5 w-fit`;
-                
-                if (isUser) {
-                    messageDiv.innerHTML = `
-                        <div class="flex items-center space-x-3 mb-2 justify-end">
-                            <div>
-                                <span class="text-xs text-slate-300 mr-2">${timeString}</span>
-                                <span class="font-medium">You</span>
-                            </div>
-                            <div class="w-8 h-8 rounded-full user-avatar flex items-center justify-center text-xs">ME</div>
-                        </div>
-                        <p class="leading-relaxed">${text}</p>
-                        <div class="translated-message hidden">
-                            ${translatedText || ''}
-                        </div>
-                    `;
+            // Receive active users list
+            socket.on('active_users', (users) => {
+                console.log('Active users:', users);
+                // Update active users count in UI
+                const userCount = users.length;
+                const statusElem = document.getElementById('connection-status');
+                if (userCount > 1) {
+                    statusElem.innerHTML = `<span>Connected (${userCount} users)</span>`;
                 } else {
-                    // Make sure we have valid sender information
-                    const displayName = senderName || 'Other User';
-                    const initials = getInitials(displayName);
-                    
-                    messageDiv.innerHTML = `
-                        <div class="flex items-center space-x-3 mb-2">
-                            <div class="w-8 h-8 rounded-full other-avatar flex items-center justify-center text-xs">${initials}</div>
-                            <div>
-                                <span class="font-medium">${displayName}</span>
-                                <span class="text-xs text-slate-300 ml-2">${timeString}</span>
-                            </div>
-                        </div>
-                        <p class="leading-relaxed">${text}</p>
-                        <div class="translated-message ${selectedLanguage ? '' : 'hidden'}">
-                            ${translatedText || ''}
-                        </div>
-                    `;
+                    statusElem.innerHTML = `<span>Connected</span>`;
                 }
-                
-                return messageDiv;
-            }
+            });
             
-            // Modified addMessage function to use createMessageElement
-            function addMessage(text, isUser, translatedText = '', senderName = null) {
-                const messageDiv = createMessageElement(text, isUser, translatedText, senderName);
+            // Debug incoming messages
+            socket.onAny((event, ...args) => {
+                console.log(`[Socket Event] ${event}:`, args);
+            });
+            
+            // Improved chat message handling
+            socket.on('chat_message', (data) => {
+                console.log('Received chat message:', data);
                 
-                // Insert before typing indicator
-                chatContainer.insertBefore(messageDiv, typingIndicator);
-                chatContainer.scrollTop = chatContainer.scrollHeight;
-                
-                return messageDiv;
-            }
+                // Only process messages from other users
+                if (data.userId && data.userId !== userId) {
+                    console.log('Adding message from:', data.userName);
+                    
+                    // If translation is enabled and target language is different from source
+                    if (selectedLanguage && (!data.sourceLang || data.sourceLang !== selectedLanguage)) {
+                        // First add the message in "translating" state
+                        const otherMessageElement = addMessage(data.message, false, 'Translating...', data.userName);
+                        const messageTextElement = otherMessageElement.querySelector('p.leading-relaxed');
+                        const translationElement = otherMessageElement.querySelector('.translated-message');
+                        
+                        // Remove the hidden class from translation element
+                        if (translationElement) translationElement.classList.remove('hidden');
+                        
+                        // Play notification sound
+                        playMessageSound();
+                        
+                        // Translate received message
+                        translateText(data.message, selectedLanguage)
+                            .then(translatedText => {
+                                // Update the main message content with translation
+                                if (messageTextElement) {
+                                    // Store the original text as data attribute
+                                    messageTextElement.setAttribute('data-original', data.message);
+                                    messageTextElement.textContent = translatedText;
+                                }
+                                
+                                // Show original text in translation element
+                                if (translationElement) {
+                                    translationElement.innerHTML = `<span class="text-xs text-slate-400">Original: </span>${data.message}`;
+                                }
+                            })
+                            .catch(err => {
+                                console.error('Translation error:', err);
+                                if (translationElement) translationElement.textContent = 'Translation failed';
+                            });
+                    } else {
+                        // No translation needed, show as is
+                        addMessage(data.message, false, '', data.userName);
+                        playMessageSound();
+                    }
+                } else {
+                    console.log('Ignoring own message or invalid message');
+                }
+            });
             
             // Update this function to connect to your chosen free hosting service with reconnection
             function connectToServer() {
@@ -785,6 +656,7 @@
             // Message form submission
             const messageForm = document.getElementById('message-form');
             const messageInput = document.getElementById('message-input');
+            const chatContainer = document.querySelector('.chat-container');
             const typingIndicator = document.getElementById('typing-indicator');
             
             // File upload handling
@@ -1099,8 +971,77 @@
                 }
             }
             
-            // The rest of the existing functions
-            // ...existing code...
+            // Updated addMessage function
+            function addMessage(text, isUser, translatedText = '', senderName = null) {
+                const now = new Date();
+                const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message-bubble ${isUser ? 'user-message' : 'other-message'} p-5 w-fit`;
+                
+                if (isUser) {
+                    messageDiv.innerHTML = `
+                        <div class="flex items-center space-x-3 mb-2 justify-end">
+                            <div>
+                                <span class="text-xs text-slate-300 mr-2">${timeString}</span>
+                                <span class="font-medium">You</span>
+                            </div>
+                            <div class="w-8 h-8 rounded-full user-avatar flex items-center justify-center text-xs">ME</div>
+                        </div>
+                        <p class="leading-relaxed">${text}</p>
+                        <div class="translated-message hidden">
+                            ${translatedText || ''}
+                        </div>
+                    `;
+                } else {
+                    // Make sure we have valid sender information
+                    const displayName = senderName || 'Other User';
+                    const initials = getInitials(displayName);
+                    
+                    messageDiv.innerHTML = `
+                        <div class="flex items-center space-x-3 mb-2">
+                            <div class="w-8 h-8 rounded-full other-avatar flex items-center justify-center text-xs">${initials}</div>
+                            <div>
+                                <span class="font-medium">${displayName}</span>
+                                <span class="text-xs text-slate-300 ml-2">${timeString}</span>
+                            </div>
+                        </div>
+                        <p class="leading-relaxed">${text}</p>
+                        <div class="translated-message ${selectedLanguage ? '' : 'hidden'}">
+                            ${translatedText || ''}
+                        </div>
+                    `;
+                }
+                
+                // Insert before typing indicator
+                chatContainer.insertBefore(messageDiv, typingIndicator);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                
+                // Return the message element so we can update it later
+                return messageDiv;
+            }
+            
+            // Function to play a notification sound (placeholder)
+            function playMessageSound() {
+                // Implement sound notification if available
+                // For example: new Audio('notification.mp3').play();
+                console.log('Message notification sound would play here');
+            }
+            
+            function generateUserId() {
+                return 'user_' + Math.random().toString(36).substr(2, 9);
+            }
+            
+            function getInitials(name) {
+                if (!name) return 'OT';
+                return name.split(' ')
+                    .map(part => part.charAt(0).toUpperCase())
+                    .join('')
+                    .substring(0, 2);
+            }
+            
+            // Initial scroll to bottom
+            chatContainer.scrollTop = chatContainer.scrollHeight;
         });
     </script>
 </body>

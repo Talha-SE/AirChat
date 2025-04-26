@@ -22,75 +22,37 @@ const io = new Server(server, {
   }
 });
 
-// Connect to MongoDB with improved error handling and reconnection logic
+// Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
-  useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
-  socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+  useUnifiedTopology: true
 })
 .then(() => console.log('MongoDB connected'))
 .catch(err => console.error('MongoDB connection error:', err));
 
-// Handle MongoDB connection events for better reliability
-mongoose.connection.on('error', err => {
-  console.error('MongoDB connection error:', err);
-});
-
-mongoose.connection.on('disconnected', () => {
-  console.log('MongoDB disconnected, attempting to reconnect...');
-});
-
-mongoose.connection.on('reconnected', () => {
-  console.log('MongoDB reconnected');
-});
-
-// Define Message Schema with indexes for better query performance
+// Define Message Schema
 const messageSchema = new mongoose.Schema({
-  userId: { type: String, index: true },
+  userId: String,
   userName: String,
   message: String,
   sourceLang: String,
   timestamp: {
     type: Date,
-    default: Date.now,
-    index: true // Add index to improve query performance on timestamp
+    default: Date.now
   },
   files: [{
     name: String,
     mimetype: String,
     size: Number,
-    url: String,
-    fullUrl: String // Add fullUrl to store complete URL
+    url: String
   }],
   isFileShare: {
     type: Boolean,
-    default: false,
-    index: true // Add index to improve filtering by message type
+    default: false
   }
 });
-
-// Add compound index for common queries
-messageSchema.index({ timestamp: -1, isFileShare: 1 });
 
 const Message = mongoose.model('Message', messageSchema);
-
-// Define Translation Cache Schema to avoid retranslating the same content
-const translationCacheSchema = new mongoose.Schema({
-  originalText: { type: String, required: true },
-  targetLang: { type: String, required: true },
-  translation: { type: String, required: true },
-  timestamp: {
-    type: Date,
-    default: Date.now,
-    expires: '7d' // Auto-expire entries after 7 days
-  }
-});
-
-// Compound index for cache lookup
-translationCacheSchema.index({ originalText: 1, targetLang: 1 }, { unique: true });
-
-const TranslationCache = mongoose.model('TranslationCache', translationCacheSchema);
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -131,65 +93,20 @@ app.use(express.static(path.join(__dirname)));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.json());
 
-// Enhanced API endpoint to get chat history with pagination support
+// API endpoint to get chat history
 app.get('/api/message-history', async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 0;
-    const limit = parseInt(req.query.limit) || 50;
-    const skip = page * limit;
-    
-    // Get total count for pagination info
-    const totalMessages = await Message.countDocuments();
-    
-    // Get paginated messages, sorted by timestamp
+    // Get last 50 messages, sorted by timestamp
     const messages = await Message.find()
       .sort({ timestamp: -1 })
-      .skip(skip)
-      .limit(limit)
+      .limit(50)
       .lean();
     
-    // Send messages in chronological order (oldest first) with pagination metadata
-    res.json({
-      messages: messages.reverse(),
-      pagination: {
-        page,
-        limit,
-        total: totalMessages,
-        pages: Math.ceil(totalMessages / limit),
-        hasMore: skip + limit < totalMessages
-      }
-    });
+    // Send messages in chronological order (oldest first)
+    res.json(messages.reverse());
   } catch (error) {
     console.error('Error fetching message history:', error);
     res.status(500).json({ error: 'Failed to fetch message history' });
-  }
-});
-
-// New endpoint to get older messages
-app.get('/api/older-messages', async (req, res) => {
-  try {
-    const before = req.query.before; // Timestamp to get messages before
-    const limit = parseInt(req.query.limit) || 20;
-    
-    if (!before) {
-      return res.status(400).json({ error: 'Missing "before" timestamp parameter' });
-    }
-    
-    // Get messages older than the provided timestamp
-    const messages = await Message.find({ 
-      timestamp: { $lt: new Date(before) } 
-    })
-    .sort({ timestamp: -1 })
-    .limit(limit)
-    .lean();
-    
-    res.json({
-      messages: messages.reverse(), // Return in chronological order
-      hasMore: messages.length === limit
-    });
-  } catch (error) {
-    console.error('Error fetching older messages:', error);
-    res.status(500).json({ error: 'Failed to fetch older messages' });
   }
 });
 
@@ -200,21 +117,15 @@ app.post('/upload', upload.single('file'), (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
     
-    // Get base URL from environment or use request info
-    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-    
-    // Return the file information including both relative and full URLs
+    // Return the file information including the URL
     const fileUrl = `/uploads/${req.file.filename}`;
-    const fullUrl = `${baseUrl}${fileUrl}`;
-    
     res.json({ 
       success: true,
       file: {
         name: req.file.originalname,
         mimetype: req.file.mimetype,
         size: req.file.size,
-        url: fileUrl,
-        fullUrl: fullUrl
+        url: fileUrl
       }
     });
   } catch (error) {
@@ -230,22 +141,13 @@ app.post('/upload-multiple', upload.array('files', 10), (req, res) => {
       return res.status(400).json({ error: 'No files uploaded' });
     }
     
-    // Get base URL from environment or use request info
-    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-    
     // Return information about all uploaded files
-    const filesInfo = req.files.map(file => {
-      const fileUrl = `/uploads/${file.filename}`;
-      const fullUrl = `${baseUrl}${fileUrl}`;
-      
-      return {
-        name: file.originalname,
-        mimetype: file.mimetype,
-        size: file.size,
-        url: fileUrl,
-        fullUrl: fullUrl
-      };
-    });
+    const filesInfo = req.files.map(file => ({
+      name: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      url: `/uploads/${file.filename}`
+    }));
     
     res.json({ 
       success: true,
@@ -279,29 +181,27 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Update the translation endpoint to use DeepL API with improved caching via MongoDB
+// Update the translation endpoint to use DeepL API with improved caching
+const translationCache = new Map(); // Cache to store recent translations
+const CACHE_EXPIRY = 3600000; // Cache expiration time in ms (1 hour)
+
 app.post('/translate', async (req, res) => {
   try {
     const { text, targetLang } = req.body;
     
-    // Check for empty text or missing target language
-    if (!text || !targetLang) {
-      return res.status(400).json({ error: 'Missing required parameters' });
-    }
+    // Create a cache key combining text and target language
+    const cacheKey = `${text.substring(0, 100)}_${targetLang}`;
     
-    // Check if translation is in MongoDB cache
-    const cachedTranslation = await TranslationCache.findOne({
-      originalText: text.substring(0, 500), // Limit text length for cache key
-      targetLang: targetLang
-    });
-    
-    if (cachedTranslation) {
-      console.log('Translation cache hit');
-      return res.json({ translation: cachedTranslation.translation });
+    // Check if translation is in cache and not expired
+    if (translationCache.has(cacheKey)) {
+      const cacheEntry = translationCache.get(cacheKey);
+      if (Date.now() - cacheEntry.timestamp < CACHE_EXPIRY) {
+        return res.json({ translation: cacheEntry.translation });
+      }
     }
     
     // DeepL API integration
-    const DEEPL_API_KEY = process.env.DEEPL_API_KEY;
+    const DEEPL_API_KEY = process.env.DEEPL_API_KEY; // Use API key from environment variables
     const DEEPL_API_URL = 'https://api-free.deepl.com/v2/translate';
     
     // Convert our language codes to DeepL format if needed
@@ -334,17 +234,20 @@ app.post('/translate', async (req, res) => {
     const data = await response.json();
     const translation = data.translations[0].text;
     
-    // Store in MongoDB cache
-    try {
-      await new TranslationCache({
-        originalText: text.substring(0, 500), // Limit text length
-        targetLang: targetLang,
-        translation: translation,
-        timestamp: new Date()
-      }).save();
-    } catch (cacheError) {
-      // If cache save fails, just log it but don't fail the request
-      console.error('Error saving translation to cache:', cacheError);
+    // Store in cache
+    translationCache.set(cacheKey, {
+      translation: translation,
+      timestamp: Date.now()
+    });
+    
+    // Clean up old cache entries occasionally
+    if (Math.random() < 0.1) { // 10% chance to clean up each request
+      const now = Date.now();
+      for (const [key, value] of translationCache.entries()) {
+        if (now - value.timestamp > CACHE_EXPIRY) {
+          translationCache.delete(key);
+        }
+      }
     }
     
     res.json({ translation });
@@ -396,36 +299,17 @@ io.on('connection', (socket) => {
     // Send the list of active users to the newly joined user
     socket.emit('active_users', Array.from(activeUsers.values()));
     
-    // Send message history to the newly joined user with improved error handling
+    // Send message history to the newly joined user
     try {
       const messages = await Message.find()
         .sort({ timestamp: -1 })
-        .limit(30) // Reduce initial load to 30 messages for faster startup
+        .limit(50)
         .lean();
       
-      // Get the base URL for file URLs
-      const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
-      
-      // Add complete URLs to files if needed
-      messages.forEach(msg => {
-        if (msg.files && msg.files.length > 0) {
-          msg.files.forEach(file => {
-            if (file.url && !file.fullUrl) {
-              file.fullUrl = `${baseUrl}${file.url}`;
-            }
-          });
-        }
-      });
-      
-      // Send messages in chronological order with metadata
-      socket.emit('message_history', {
-        messages: messages.reverse(),
-        hasMore: await Message.countDocuments() > messages.length,
-        oldestTimestamp: messages.length > 0 ? messages[0].timestamp : null
-      });
+      // Send messages in chronological order
+      socket.emit('message_history', messages.reverse());
     } catch (error) {
       console.error('Error fetching message history:', error);
-      socket.emit('error', { message: 'Failed to fetch message history' });
     }
     
     // Notify others that a new user joined
@@ -457,24 +341,22 @@ io.on('connection', (socket) => {
       
       // Add MongoDB _id to the emitted message
       completeData._id = message._id;
-      
-      // Broadcast the message to all clients
-      io.emit('chat_message', completeData);
     } catch (error) {
       console.error('Error saving message to database:', error);
-      socket.emit('error', { message: 'Failed to save message' });
     }
+    
+    // Broadcast the message to all clients
+    io.emit('chat_message', completeData);
   });
   
   // Enhanced file sharing with real file URLs and database storage
   socket.on('file_shared', async (data) => {
-    // Get base URL from environment variables
-    const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
-    
     // Add the server base URL to any relative URLs
     if (data.files) {
       data.files.forEach(file => {
-        if (file.url && !file.fullUrl) {
+        if (file.url && file.url.startsWith('/uploads/')) {
+          // For absolute URLs in production
+          const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
           file.fullUrl = `${baseUrl}${file.url}`;
         }
       });
@@ -494,57 +376,12 @@ io.on('connection', (socket) => {
       
       // Add MongoDB _id to the emitted message
       data._id = message._id;
-      
-      // Broadcast file metadata to all clients
-      io.emit('file_shared', data);
     } catch (error) {
       console.error('Error saving file share to database:', error);
-      socket.emit('error', { message: 'Failed to save file share' });
     }
-  });
-  
-  // Handle request for older messages
-  socket.on('fetch_older_messages', async (options) => {
-    try {
-      const before = options.before; // Timestamp to get messages before
-      const limit = options.limit || 20;
-      
-      if (!before) {
-        return socket.emit('error', { message: 'Missing timestamp for older messages' });
-      }
-      
-      // Get messages older than the provided timestamp
-      const messages = await Message.find({ 
-        timestamp: { $lt: new Date(before) } 
-      })
-      .sort({ timestamp: -1 })
-      .limit(limit)
-      .lean();
-      
-      // Get base URL for files
-      const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
-      
-      // Add complete URLs to files if needed
-      messages.forEach(msg => {
-        if (msg.files && msg.files.length > 0) {
-          msg.files.forEach(file => {
-            if (file.url && !file.fullUrl) {
-              file.fullUrl = `${baseUrl}${file.url}`;
-            }
-          });
-        }
-      });
-      
-      // Send older messages to the client
-      socket.emit('older_messages', {
-        messages: messages.reverse(), // Send in chronological order
-        hasMore: messages.length === limit,
-        oldestTimestamp: messages.length > 0 ? messages[0].timestamp : null
-      });
-    } catch (error) {
-      console.error('Error fetching older messages:', error);
-      socket.emit('error', { message: 'Failed to fetch older messages' });
-    }
+    
+    // Broadcast file metadata to all clients
+    io.emit('file_shared', data);
   });
   
   socket.on('disconnect', () => {
