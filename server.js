@@ -27,19 +27,50 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Handle translation requests
+// Update the translation endpoint to use DeepL API
 app.post('/translate', async (req, res) => {
   try {
     const { text, targetLang } = req.body;
     
-    // This is a mock translation for demonstration
-    // In a real app, you would call a translation API
-    const translatedText = `[${targetLang}] ${text}`;
+    // DeepL API integration
+    const DEEPL_API_KEY = '3d778465-68f0-4548-8b70-22b3af29d268:fx'; // Get this from DeepL
+    const DEEPL_API_URL = 'https://api-free.deepl.com/v2/translate';
     
-    res.json({ translation: translatedText });
+    // Convert our language codes to DeepL format if needed
+    // EN->EN-US, JA->JA, etc.
+    const deepLLangCode = {
+      'EN': 'EN-US',
+      'ES': 'ES',
+      'FR': 'FR',
+      'DE': 'DE',
+      'IT': 'IT',
+      'JA': 'JA',
+      'KO': 'KO'
+    }[targetLang] || 'EN-US';
+    
+    const response = await fetch(DEEPL_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `DeepL-Auth-Key ${DEEPL_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text: [text],
+        target_lang: deepLLangCode
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`DeepL API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const translation = data.translations[0].text;
+    
+    res.json({ translation });
   } catch (error) {
     console.error('Translation error:', error);
-    res.status(500).json({ error: 'Translation failed' });
+    res.status(500).json({ error: 'Translation failed', details: error.message });
   }
 });
 
