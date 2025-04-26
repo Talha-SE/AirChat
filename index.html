@@ -165,11 +165,10 @@
             // Socket.io connection
             const connectionStatus = document.getElementById('connection-status');
             let userId = localStorage.getItem('chat_user_id') || generateUserId();
-            let userName = localStorage.getItem('chat_user_name') || 'User_' + userId.substring(0, 5);
+            let userName = localStorage.getItem('chat_user_name') || ''; // Empty to get server-generated name
             
             // Store user ID for future sessions
             localStorage.setItem('chat_user_id', userId);
-            localStorage.setItem('chat_user_name', userName);
             
             // Connection events
             socket.on('connect', () => {
@@ -190,66 +189,85 @@
                 chatContainer.scrollTop = chatContainer.scrollHeight;
             });
             
-            socket.on('disconnect', () => {
-                connectionStatus.className = 'px-3 py-1 rounded-full bg-red-600 text-xs mr-2';
-                connectionStatus.innerHTML = '<span>Disconnected</span>';
-                
-                // Show disconnection message in chat
-                const disconnectionMsg = document.createElement('div');
-                disconnectionMsg.className = 'text-center py-2 text-xs text-slate-400';
-                disconnectionMsg.textContent = 'Disconnected from global chat';
-                chatContainer.appendChild(disconnectionMsg);
-                chatContainer.scrollTop = chatContainer.scrollHeight;
-            });
-            
-            socket.on('user_joined', (data) => {
-                // Show user joined notification
-                const joinMsg = document.createElement('div');
-                joinMsg.className = 'text-center py-2 text-xs text-blue-400';
-                joinMsg.textContent = `${data.userName} joined the chat`;
-                chatContainer.appendChild(joinMsg);
-                chatContainer.scrollTop = chatContainer.scrollHeight;
-            });
-            
-            socket.on('user_left', (data) => {
-                // Show user left notification
-                const leftMsg = document.createElement('div');
-                leftMsg.className = 'text-center py-2 text-xs text-slate-400';
-                leftMsg.textContent = `${data.userName} left the chat`;
-                chatContainer.appendChild(leftMsg);
-                chatContainer.scrollTop = chatContainer.scrollHeight;
-            });
-            
-            socket.on('chat_message', (data) => {
-                // Receive message from another user
-                if (data.userId !== userId) {
-                    const otherMessageElement = addMessage(data.message, false, '', data.userName);
+            // Handle name assignment from server
+            socket.on('name_assigned', (data) => {
+                if (data.userName) {
+                    userName = data.userName;
+                    localStorage.setItem('chat_user_name', userName);
                     
-                    // Translate received message if translation is enabled
-                    if (selectedLanguage) {
-                        const translationElement = otherMessageElement.querySelector('.translated-message');
-                        translationElement.textContent = 'Translating...';
-                        translationElement.classList.remove('hidden');
-                        
-                        translateText(data.message, selectedLanguage)
-                            .then(translatedText => {
-                                translationElement.textContent = translatedText;
-                            })
-                            .catch(err => {
-                                console.error('Translation error:', err);
-                                translationElement.textContent = 'Translation failed';
-                            });
-                    }
+                    // Update UI to show assigned name
+                    const nameMsg = document.createElement('div');
+                    nameMsg.className = 'text-center py-2 text-xs text-blue-400';
+                    nameMsg.textContent = `You are chatting as: ${userName}`;
+                    chatContainer.appendChild(nameMsg);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
                 }
             });
             
-            socket.on('file_shared', (data) => {
-                // Handle receiving file metadata (not the actual file)
-                if (data.userId !== userId) {
-                    // Create a representation of the file that was shared
-                    createFileShareMessage(data.files, false, data.userName);
-                }
+            // Receive active users list
+            socket.on('active_users', (users) => {
+                console.log('Active users:', users);
+                // You could display this in the UI if desired
             });
+            
+            // Update this function to connect to your chosen free hosting service with reconnection
+            function connectToServer() {
+                // For deployment on Render:
+                const socket = io('https://airchat-global.onrender.com', {
+                    reconnectionAttempts: Infinity, // Never stop trying to reconnect
+                    reconnectionDelay: 1000,
+                    reconnectionDelayMax: 10000,
+                    timeout: 60000, // Longer timeout (60 seconds)
+                    pingTimeout: 120000, // Longer ping timeout (2 minutes)
+                    pingInterval: 25000, // More frequent pings (25 seconds)
+                });
+                
+                // Set up heartbeat to keep connection alive
+                const heartbeatInterval = setInterval(() => {
+                    if (socket.connected) {
+                        socket.emit('heartbeat', { userId });
+                    }
+                }, 30000); // Send heartbeat every 30 seconds
+                
+                // Clear heartbeat on page unload
+                window.addEventListener('beforeunload', () => {
+                    clearInterval(heartbeatInterval);
+                });
+                
+                // Add reconnection event handlers
+                socket.io.on('reconnect_attempt', (attempt) => {
+                    connectionStatus.className = 'px-3 py-1 rounded-full bg-yellow-600 text-xs mr-2';
+                    connectionStatus.innerHTML = `<span>Reconnecting (${attempt})...</span>`;
+                });
+                
+                // Handle disconnect event
+                socket.on('disconnect', (reason) => {
+                    connectionStatus.className = 'px-3 py-1 rounded-full bg-red-600 text-xs mr-2';
+                    connectionStatus.innerHTML = '<span>Disconnected</span>';
+                    
+                    console.log('Disconnect reason:', reason);
+                    
+                    // Show disconnection message in chat
+                    const disconnectionMsg = document.createElement('div');
+                    disconnectionMsg.className = 'text-center py-2 text-xs text-slate-400';
+                    disconnectionMsg.textContent = 'Disconnected from global chat. Attempting to reconnect...';
+                    chatContainer.appendChild(disconnectionMsg);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                    
+                    // Auto-reconnect for non-explicit disconnects
+                    if (reason !== 'io client disconnect') {
+                        setTimeout(() => {
+                            if (!socket.connected) {
+                                socket.connect();
+                            }
+                        }, 2000);
+                    }
+                });
+                
+                // ...existing code...
+                
+                return socket;
+            }
             
             // Toggle translation dropdown
             const translateToggle = document.getElementById('translate-toggle');
@@ -313,28 +331,72 @@
                 }
             });
             
-            function handleFileUpload(files) {
+            // Upload files to server before sharing
+            async function handleFileUpload(files) {
                 if (files.length === 0) return;
                 
-                // Create message with file attachments
-                const userMessageElement = createFileMessage(files, true);
+                // Show upload in progress
+                const uploadingMsg = document.createElement('div');
+                uploadingMsg.className = 'text-center py-2 text-xs text-blue-400';
+                uploadingMsg.textContent = `Uploading ${files.length} file(s)...`;
+                chatContainer.appendChild(uploadingMsg);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
                 
-                // Create shareable file metadata
-                const fileMetadata = Array.from(files).map(file => ({
+                try {
+                    // Create form data for the file upload
+                    const formData = new FormData();
+                    Array.from(files).forEach((file) => {
+                        // Handle APNG files specifically
+                        if (file.name.toLowerCase().endswith('.apng') || file.name.toLowerCase().endswith('.png')) {
+                            const renamedFile = new File([file], file.name, { 
+                                type: file.name.toLowerCase().endswith('.apng') ? 'image/apng' : 'image/png' 
+                            });
+                            formData.append('files', renamedFile);
+                        } else {
+                            formData.append('files', file);
+                        }
+                    });
+                    
+                    // Upload files to server
+                    const response = await fetch('/upload-multiple', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.details || `Upload failed: ${response.status}`);
+                    }
+                    
+                    const result = await response.json();
+                    
+                    // Remove uploading message
+                    chatContainer.removeChild(uploadingMsg);
+                    
+                    // Create message with file attachments including URLs
+                    const userMessageElement = createFileShareMessage(result.files, true);
+                    
+                    // Broadcast file metadata to other users
+                    socket.emit('file_shared', {
+                        userId: userId,
+                        userName: userName,
+                        files: result.files
+                    });
+                    
+                } catch (error) {
+                    console.error('File upload error:', error);
+                    uploadingMsg.textContent = `Upload failed: ${error.message}`;
+                    uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
+                }
+            }
+            
+            function createFileMessage(files, isUser) {
+                // For local files (backward compatibility)
+                return createFileShareMessage(files.map(file => ({
                     name: file.name,
                     size: file.size,
                     type: file.type
-                }));
-                
-                // Broadcast file metadata to other users
-                socket.emit('file_shared', {
-                    userId: userId,
-                    userName: userName,
-                    files: fileMetadata
-                });
-                
-                // Reset selected files
-                selectedFiles = [];
+                })), isUser);
             }
             
             function createFileShareMessage(fileMetadata, isUser, senderName = null) {
@@ -370,33 +432,85 @@
                 
                 // Add file attachments
                 const filesContainer = document.createElement('div');
-                filesContainer.className = 'files-container space-y-2';
+                filesContainer.className = 'files-container space-y-3';
                 
                 fileMetadata.forEach(file => {
                     const fileItem = document.createElement('div');
-                    fileItem.className = 'file-item flex items-center p-2 bg-slate-800 bg-opacity-50 rounded-lg';
+                    fileItem.className = 'file-item flex flex-col p-2 bg-slate-800 bg-opacity-50 rounded-lg';
                     
                     // Choose icon based on file type
                     let fileIcon = 'fa-file';
-                    if (file.type.startsWith('image/')) {
+                    const fileType = file.type || file.mimetype || '';
+                    const fileName = file.name || '';
+                    
+                    if (fileType.startsWith('image/') || 
+                        fileName.toLowerCase().endsWith('.png') || 
+                        fileName.toLowerCase().endsWith('.jpg') ||
+                        fileName.toLowerCase().endswith('.jpeg') ||
+                        fileName.toLowerCase().endswith('.gif') ||
+                        fileName.toLowerCase().endswith('.apng')) {
                         fileIcon = 'fa-file-image';
-                    } else if (file.type.startsWith('video/')) {
+                        
+                        // If we have a URL from the server, show the image
+                        if (file.url) {
+                            const imgContainer = document.createElement('div');
+                            imgContainer.className = 'mb-2';
+                            
+                            const img = document.createElement('img');
+                            img.className = 'max-h-64 rounded object-contain mx-auto';
+                            img.src = file.url || file.fullUrl;
+                            img.alt = file.name;
+                            
+                            // Add loading indicator
+                            const loadingText = document.createElement('div');
+                            loadingText.className = 'text-xs text-center text-slate-400 my-2';
+                            loadingText.textContent = 'Loading image...';
+                            
+                            img.onload = () => loadingText.remove();
+                            img.onerror = () => {
+                                loadingText.textContent = 'Failed to load image';
+                                loadingText.classList.add('text-red-400');
+                            };
+                            
+                            imgContainer.appendChild(loadingText);
+                            imgContainer.appendChild(img);
+                            fileItem.appendChild(imgContainer);
+                        }
+                    } else if (fileType.startsWith('video/')) {
                         fileIcon = 'fa-file-video';
-                    } else if (file.type.startsWith('audio/')) {
+                    } else if (fileType.startsWith('audio/')) {
                         fileIcon = 'fa-file-audio';
-                    } else if (file.type.includes('pdf')) {
+                    } else if (fileType.includes('pdf')) {
                         fileIcon = 'fa-file-pdf';
-                    } else if (file.type.includes('word') || file.name.endsWith('.doc') || file.name.endsWith('.docx')) {
+                    } else if (fileType.includes('word') || 
+                              fileName.endsWith('.doc') || 
+                              fileName.endsWith('.docx')) {
                         fileIcon = 'fa-file-word';
                     }
                     
-                    fileItem.innerHTML = `
+                    const fileInfoRow = document.createElement('div');
+                    fileInfoRow.className = 'flex items-center';
+                    
+                    fileInfoRow.innerHTML = `
                         <i class="fas ${fileIcon} text-blue-400 mr-3"></i>
                         <div class="flex-grow overflow-hidden">
                             <div class="text-sm font-medium text-white truncate">${file.name}</div>
-                            <div class="text-xs text-slate-400">${formatFileSize(file.size)}</div>
+                            <div class="text-xs text-slate-400">${formatFileSize(file.size || 0)}</div>
                         </div>
                     `;
+                    
+                    fileItem.appendChild(fileInfoRow);
+                    
+                    // Add download button if URL is available
+                    if (file.url) {
+                        const downloadLink = document.createElement('a');
+                        downloadLink.href = file.url || file.fullUrl;
+                        downloadLink.className = 'bg-blue-500 hover:bg-blue-600 text-white py-1 px-3 mt-2 rounded text-xs flex items-center justify-center';
+                        downloadLink.innerHTML = '<i class="fas fa-download mr-1"></i> Download';
+                        downloadLink.target = '_blank';
+                        downloadLink.rel = 'noopener noreferrer';
+                        fileItem.appendChild(downloadLink);
+                    }
                     
                     filesContainer.appendChild(fileItem);
                 });
@@ -566,15 +680,6 @@
             
             // Initial scroll to bottom
             chatContainer.scrollTop = chatContainer.scrollHeight;
-            
-            // Update this function to connect to your chosen free hosting service
-            function connectToServer() {
-                // For local testing, use:
-                // return io('http://localhost:3000');
-                
-                // For deployment on Render:
-                return io('https://airchat-global.onrender.com'); 
-            }
         });
     </script>
 </body>
