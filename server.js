@@ -5,6 +5,11 @@ const path = require('path');
 const cors = require('cors');
 const multer = require('multer');
 const fs = require('fs');
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+
+// Load environment variables
+dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
@@ -16,6 +21,38 @@ const io = new Server(server, {
     methods: ["GET", "POST"]
   }
 });
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => console.log('MongoDB connected'))
+.catch(err => console.error('MongoDB connection error:', err));
+
+// Define Message Schema
+const messageSchema = new mongoose.Schema({
+  userId: String,
+  userName: String,
+  message: String,
+  sourceLang: String,
+  timestamp: {
+    type: Date,
+    default: Date.now
+  },
+  files: [{
+    name: String,
+    mimetype: String,
+    size: Number,
+    url: String
+  }],
+  isFileShare: {
+    type: Boolean,
+    default: false
+  }
+});
+
+const Message = mongoose.model('Message', messageSchema);
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -55,6 +92,23 @@ const upload = multer({
 app.use(express.static(path.join(__dirname)));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.json());
+
+// API endpoint to get chat history
+app.get('/api/message-history', async (req, res) => {
+  try {
+    // Get last 50 messages, sorted by timestamp
+    const messages = await Message.find()
+      .sort({ timestamp: -1 })
+      .limit(50)
+      .lean();
+    
+    // Send messages in chronological order (oldest first)
+    res.json(messages.reverse());
+  } catch (error) {
+    console.error('Error fetching message history:', error);
+    res.status(500).json({ error: 'Failed to fetch message history' });
+  }
+});
 
 // File upload endpoint
 app.post('/upload', upload.single('file'), (req, res) => {
@@ -147,7 +201,7 @@ app.post('/translate', async (req, res) => {
     }
     
     // DeepL API integration
-    const DEEPL_API_KEY = '3d778465-68f0-4548-8b70-22b3af29d268:fx'; // Get this from DeepL
+    const DEEPL_API_KEY = process.env.DEEPL_API_KEY; // Use API key from environment variables
     const DEEPL_API_URL = 'https://api-free.deepl.com/v2/translate';
     
     // Convert our language codes to DeepL format if needed
@@ -220,7 +274,7 @@ function generateUniqueName() {
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
   
-  socket.on('join', (userData) => {
+  socket.on('join', async (userData) => {
     // Generate a unique name if not provided or already taken
     if (!userData.userName || userData.userName.startsWith('User_') || activeUsers.has(userData.userName)) {
       userData.userName = generateUniqueName();
@@ -245,6 +299,19 @@ io.on('connection', (socket) => {
     // Send the list of active users to the newly joined user
     socket.emit('active_users', Array.from(activeUsers.values()));
     
+    // Send message history to the newly joined user
+    try {
+      const messages = await Message.find()
+        .sort({ timestamp: -1 })
+        .limit(50)
+        .lean();
+      
+      // Send messages in chronological order
+      socket.emit('message_history', messages.reverse());
+    } catch (error) {
+      console.error('Error fetching message history:', error);
+    }
+    
     // Notify others that a new user joined
     socket.broadcast.emit('user_joined', {
       userId: userData.userId,
@@ -252,19 +319,38 @@ io.on('connection', (socket) => {
     });
   });
   
-  socket.on('chat_message', (data) => {
+  socket.on('chat_message', async (data) => {
     // Ensure message has the source language
     const completeData = {
       ...data,
-      sourceLang: data.sourceLang || 'EN' // Default to English if not specified
+      sourceLang: data.sourceLang || 'EN', // Default to English if not specified
+      timestamp: new Date()
     };
+    
+    try {
+      // Create and save the message to MongoDB
+      const message = new Message({
+        userId: completeData.userId,
+        userName: completeData.userName,
+        message: completeData.message,
+        sourceLang: completeData.sourceLang,
+        timestamp: completeData.timestamp
+      });
+      
+      await message.save();
+      
+      // Add MongoDB _id to the emitted message
+      completeData._id = message._id;
+    } catch (error) {
+      console.error('Error saving message to database:', error);
+    }
     
     // Broadcast the message to all clients
     io.emit('chat_message', completeData);
   });
   
-  // Enhanced file sharing with real file URLs
-  socket.on('file_shared', (data) => {
+  // Enhanced file sharing with real file URLs and database storage
+  socket.on('file_shared', async (data) => {
     // Add the server base URL to any relative URLs
     if (data.files) {
       data.files.forEach(file => {
@@ -274,6 +360,24 @@ io.on('connection', (socket) => {
           file.fullUrl = `${baseUrl}${file.url}`;
         }
       });
+    }
+    
+    try {
+      // Create and save the file share message to MongoDB
+      const message = new Message({
+        userId: data.userId,
+        userName: data.userName,
+        files: data.files,
+        isFileShare: true,
+        timestamp: new Date()
+      });
+      
+      await message.save();
+      
+      // Add MongoDB _id to the emitted message
+      data._id = message._id;
+    } catch (error) {
+      console.error('Error saving file share to database:', error);
     }
     
     // Broadcast file metadata to all clients

@@ -371,6 +371,74 @@
                 chatContainer.scrollTop = chatContainer.scrollHeight;
             });
             
+            // Handle message history from server
+            socket.on('message_history', (messages) => {
+                console.log('Received message history:', messages.length, 'messages');
+                
+                // Clear welcome message if we have history
+                if (messages.length > 0) {
+                    const welcomeContainer = document.querySelector('.welcome-container');
+                    if (welcomeContainer) {
+                        welcomeContainer.remove();
+                    }
+                    
+                    // Clear any sample messages
+                    const sampleMessages = document.querySelectorAll('.message-bubble');
+                    sampleMessages.forEach(msg => {
+                        if (!msg.hasAttribute('data-real-message')) {
+                            msg.remove();
+                        }
+                    });
+                    
+                    // Add history notification
+                    const historyMsg = document.createElement('div');
+                    historyMsg.className = 'text-center py-2 text-xs text-blue-400';
+                    historyMsg.textContent = `Showing last ${messages.length} messages`;
+                    chatContainer.appendChild(historyMsg);
+                    
+                    // Display each message
+                    messages.forEach(msg => {
+                        if (msg.isFileShare && msg.files && msg.files.length > 0) {
+                            // It's a file share message
+                            createFileShareMessage(msg.files, msg.userId === userId, msg.userName);
+                        } else {
+                            // It's a text message
+                            const isUser = msg.userId === userId;
+                            const messageElement = addMessage(msg.message, isUser, '', isUser ? null : msg.userName);
+                            messageElement.setAttribute('data-real-message', 'true');
+                            
+                            // If translation is enabled and it's not user's message
+                            if (selectedLanguage && !isUser) {
+                                const messageTextElement = messageElement.querySelector('p.leading-relaxed');
+                                const translationElement = messageElement.querySelector('.translated-message');
+                                
+                                // Store the original text as data attribute
+                                messageTextElement.setAttribute('data-original', msg.message);
+                                
+                                // Translate the message
+                                translateText(msg.message, selectedLanguage)
+                                    .then(translatedText => {
+                                        // Update the main message content with translation
+                                        messageTextElement.textContent = translatedText;
+                                        
+                                        // Show original text in translation element
+                                        if (translationElement) {
+                                            translationElement.innerHTML = `<span class="text-xs text-slate-400">Original: </span>${msg.message}`;
+                                            translationElement.classList.remove('hidden');
+                                        }
+                                    })
+                                    .catch(err => {
+                                        console.error('Translation error:', err);
+                                    });
+                            }
+                        }
+                    });
+                    
+                    // Scroll to bottom after loading history
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+            });
+            
             // Handle name assignment from server
             socket.on('name_assigned', (data) => {
                 if (data.userName) {
@@ -528,12 +596,20 @@
             
             // Language selection
             const languageSelectors = document.querySelectorAll('.language-selector');
-            let selectedLanguage = 'ES'; // Default to Spanish
+            let selectedLanguage = localStorage.getItem('preferred_language') || 'EN'; // Default to English instead of Spanish
+            
+            // Set initial language display based on stored preference
+            const initialLanguage = Array.from(languageSelectors).find(el => el.dataset.lang === selectedLanguage);
+            if (initialLanguage) {
+                translateToggle.innerHTML = `<i class="fas fa-language text-blue-400"></i><span class="ml-2">${initialLanguage.textContent}</span>`;
+            }
             
             languageSelectors.forEach(selector => {
                 selector.addEventListener('click', function() {
                     const previousLanguage = selectedLanguage;
                     selectedLanguage = this.dataset.lang;
+                    // Save language preference
+                    localStorage.setItem('preferred_language', selectedLanguage);
                     translateToggle.innerHTML = `<i class="fas fa-language text-blue-400"></i><span class="ml-2">${this.textContent}</span>`;
                     languageDropdown.classList.add('hidden');
                     
