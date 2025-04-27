@@ -39,26 +39,14 @@ function addMessage(text, isUser, translatedText = '', senderName = null) {
             <span class="message-time">${timeString}</span>
         `;
         
-        // Create message text
+        // Create message text - no translation for user messages
         const messageText = document.createElement('p');
         messageText.className = 'message-text';
         messageText.textContent = text;
         
-        // Create translated message container (initially hidden)
-        const translatedContainer = document.createElement('div');
-        translatedContainer.className = 'translated-message hidden';
-        if (translatedText) {
-            translatedContainer.innerHTML = `
-                <span class="translated-label">Translated</span>
-                <p>${translatedText}</p>
-            `;
-            translatedContainer.classList.remove('hidden');
-        }
-        
-        // Append all elements
+        // Append elements - no translation container for user messages
         messageContent.appendChild(messageHeader);
         messageContent.appendChild(messageText);
-        messageContent.appendChild(translatedContainer);
         messageDiv.appendChild(messageContent);
     } else {
         // Make sure we have valid sender information
@@ -76,26 +64,30 @@ function addMessage(text, isUser, translatedText = '', senderName = null) {
             <span class="message-time">${timeString}</span>
         `;
         
-        // Create message text
+        // Create message text - for other users' messages, this might be translated
         const messageText = document.createElement('p');
         messageText.className = 'message-text';
         messageText.textContent = text;
+        
+        // Store original message for potential re-translation later
         messageText.setAttribute('data-original', text);
         
-        // Create translated message container
-        const translatedContainer = document.createElement('div');
-        translatedContainer.className = `translated-message ${translatedText ? '' : 'hidden'}`;
-        if (translatedText) {
-            translatedContainer.innerHTML = `
+        // Create original message container (only if we have translation)
+        const originalContainer = document.createElement('div');
+        originalContainer.className = `translated-message ${translatedText ? '' : 'hidden'}`;
+        if (translatedText && translatedText !== text) {
+            originalContainer.innerHTML = `
                 <span class="translated-label">Original</span>
-                <p>${translatedText}</p>
+                <p>${text}</p>
             `;
+            // If we have translation, display it as the main message
+            messageText.textContent = translatedText;
         }
         
         // Append all elements
         messageContent.appendChild(messageHeader);
         messageContent.appendChild(messageText);
-        messageContent.appendChild(translatedContainer);
+        messageContent.appendChild(originalContainer);
         messageDiv.appendChild(messageContent);
     }
     
@@ -153,8 +145,9 @@ languageSelectors.forEach(selector => {
                 
                 if (!messageText) return; // Skip if no message text element
                 
-                // Get original text (if available) or current text
-                const originalText = messageText.getAttribute('data-original') || messageText.textContent;
+                // Get original text
+                const originalText = messageText.getAttribute('data-original');
+                if (!originalText) return; // Skip if no original text stored
                 
                 if (newLanguage) {
                     // Show translating state
@@ -163,21 +156,31 @@ languageSelectors.forEach(selector => {
                     // Translate to new language
                     window.translationModule.translateText(originalText, newLanguage)
                         .then(translatedText => {
-                            // Update main message content
-                            messageText.textContent = translatedText;
-                            
-                            // Show original in translation area
-                            if (translationEl) {
-                                translationEl.innerHTML = `<span class="translated-label">Original</span><p>${originalText}</p>`;
-                                translationEl.classList.remove('hidden');
+                            if (translatedText !== originalText) {
+                                // Update main message content with translation
+                                messageText.textContent = translatedText;
+                                
+                                // Show original in translation area
+                                if (translationEl) {
+                                    translationEl.innerHTML = `
+                                        <span class="translated-label">Original</span>
+                                        <p>${originalText}</p>
+                                    `;
+                                    translationEl.classList.remove('hidden');
+                                }
+                            } else {
+                                // If translation is same as original, just show original
+                                messageText.textContent = originalText;
+                                if (translationEl) {
+                                    translationEl.classList.add('hidden');
+                                }
                             }
                         })
                         .catch(err => {
                             console.error('Translation error:', err);
                             messageText.textContent = originalText; // Revert to original on error
                             if (translationEl) {
-                                translationEl.innerHTML = `<span class="translated-label">Translation Failed</span><p>Could not translate message</p>`;
-                                translationEl.classList.remove('hidden');
+                                translationEl.classList.add('hidden');
                             }
                         });
                 } else {

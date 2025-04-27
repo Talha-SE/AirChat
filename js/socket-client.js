@@ -88,85 +88,6 @@ function connectToServer() {
         window.uiModule.chatContainer.scrollTop = window.uiModule.chatContainer.scrollHeight;
     });
     
-    // Handle message history from server
-    socket.on('message_history', (messages) => {
-        console.log('Received message history:', messages.length, 'messages');
-        
-        // Clear welcome message if we have history
-        if (messages.length > 0) {
-            const welcomeContainer = document.querySelector('.welcome-container');
-            if (welcomeContainer) {
-                welcomeContainer.remove();
-            }
-            
-            // Clear any sample messages
-            const sampleMessages = document.querySelectorAll('.message-bubble');
-            sampleMessages.forEach(msg => {
-                if (!msg.hasAttribute('data-real-message')) {
-                    msg.remove();
-                }
-            });
-            
-            // Add history notification
-            const historyMsg = document.createElement('div');
-            historyMsg.className = 'text-center py-2 text-xs text-blue-400';
-            historyMsg.textContent = `Showing last ${messages.length} messages`;
-            window.uiModule.chatContainer.appendChild(historyMsg);
-            
-            // Display each message
-            messages.forEach(msg => {
-                if (msg.isFileShare && msg.files && msg.files.length > 0) {
-                    // It's a file share message
-                    window.fileModule.createFileShareMessage(msg.files, msg.userId === userId, msg.userName);
-                } else {
-                    // It's a text message
-                    const isUser = msg.userId === userId;
-                    const messageElement = window.uiModule.addMessage(msg.message, isUser, '', isUser ? null : msg.userName);
-                    messageElement.setAttribute('data-real-message', 'true');
-                    
-                    // If translation is enabled and it's not user's message
-                    const currentLang = window.translationModule.selectedLanguage;
-                    if (currentLang && !isUser) {
-                        const messageTextElement = messageElement.querySelector('.message-text');
-                        const translationElement = messageElement.querySelector('.translated-message');
-                        
-                        if (messageTextElement) {
-                            // Store the original text as data attribute
-                            messageTextElement.setAttribute('data-original', msg.message);
-                            
-                            // Show translating state
-                            messageTextElement.textContent = 'Translating...';
-                            
-                            // Translate the message
-                            window.translationModule.translateText(msg.message, currentLang)
-                                .then(translatedText => {
-                                    // Update the main message content with translation
-                                    messageTextElement.textContent = translatedText;
-                                    
-                                    // Show original text in translation element
-                                    if (translationElement) {
-                                        translationElement.innerHTML = `<span class="translated-label">Original</span><p>${msg.message}</p>`;
-                                        translationElement.classList.remove('hidden');
-                                    }
-                                })
-                                .catch(err => {
-                                    console.error('Translation error:', err);
-                                    messageTextElement.textContent = msg.message; // Revert to original on error
-                                    if (translationElement) {
-                                        translationElement.innerHTML = `<span class="translated-label">Translation Failed</span><p>Could not translate message</p>`;
-                                        translationElement.classList.remove('hidden');
-                                    }
-                                });
-                        }
-                    }
-                }
-            });
-            
-            // Scroll to bottom after loading history
-            window.uiModule.chatContainer.scrollTop = window.uiModule.chatContainer.scrollHeight;
-        }
-    });
-    
     // Handle name assignment from server
     socket.on('name_assigned', (data) => {
         if (data.userName) {
@@ -202,20 +123,29 @@ function connectToServer() {
         if (data.userId && data.userId !== userId) {
             console.log('Adding message from:', data.userName);
             
+            // Get current language preference
             const currentLang = window.translationModule.selectedLanguage;
             
-            // If translation is enabled and target language is different from source
-            if (currentLang && (!data.sourceLang || data.sourceLang !== currentLang)) {
-                // First add the message in original form
-                const otherMessageElement = window.uiModule.addMessage(data.message, false, data.message, data.userName);
+            if (currentLang) {
+                // First add the message in its original form
+                const otherMessageElement = window.uiModule.addMessage(
+                    data.message, 
+                    false,   // Not user's message
+                    '',      // No translation yet
+                    data.userName
+                );
+                
+                // Find elements to update with translation
                 const messageTextElement = otherMessageElement.querySelector('.message-text');
                 const translationElement = otherMessageElement.querySelector('.translated-message');
                 
                 // Play notification sound
                 playMessageSound();
                 
-                // Remove the hidden class from translation element
-                if (translationElement) translationElement.classList.remove('hidden');
+                // Set original text attribute
+                if (messageTextElement) {
+                    messageTextElement.setAttribute('data-original', data.message);
+                }
                 
                 // Show translating state
                 if (messageTextElement) {
@@ -225,25 +155,33 @@ function connectToServer() {
                 // Translate received message
                 window.translationModule.translateText(data.message, currentLang)
                     .then(translatedText => {
-                        // Update the main message content with translation
-                        if (messageTextElement) {
-                            // Store the original text as data attribute
-                            messageTextElement.setAttribute('data-original', data.message);
-                            messageTextElement.textContent = translatedText;
-                        }
-                        
-                        // Show original text in translation element
-                        if (translationElement) {
-                            translationElement.innerHTML = `<span class="translated-label">Original</span><p>${data.message}</p>`;
+                        // Only update if translation is different from original
+                        if (translatedText !== data.message) {
+                            // Update the main message content with translation
+                            if (messageTextElement) {
+                                messageTextElement.textContent = translatedText;
+                            }
+                            
+                            // Show original text in translation element
+                            if (translationElement) {
+                                translationElement.innerHTML = `
+                                    <span class="translated-label">Original</span>
+                                    <p>${data.message}</p>
+                                `;
+                                translationElement.classList.remove('hidden');
+                            }
+                        } else {
+                            // If translation is same as original, just show original
+                            if (messageTextElement) {
+                                messageTextElement.textContent = data.message;
+                            }
                         }
                     })
                     .catch(err => {
                         console.error('Translation error:', err);
+                        // Just show original message on error
                         if (messageTextElement) {
-                            messageTextElement.textContent = data.message; // Revert to original on error
-                        }
-                        if (translationElement) {
-                            translationElement.innerHTML = `<span class="translated-label">Translation Failed</span><p>Could not translate message</p>`;
+                            messageTextElement.textContent = data.message;
                         }
                     });
             } else {
@@ -253,6 +191,114 @@ function connectToServer() {
             }
         } else {
             console.log('Ignoring own message or invalid message');
+        }
+    });
+
+    // Handle message history from server
+    socket.on('message_history', (messages) => {
+        console.log('Received message history:', messages.length, 'messages');
+        
+        // Clear welcome message if we have history
+        if (messages.length > 0) {
+            const welcomeContainer = document.querySelector('.welcome-container');
+            if (welcomeContainer) {
+                welcomeContainer.remove();
+            }
+            
+            // Clear any sample messages
+            const sampleMessages = document.querySelectorAll('.message-bubble');
+            sampleMessages.forEach(msg => {
+                if (!msg.hasAttribute('data-real-message')) {
+                    msg.remove();
+                }
+            });
+            
+            // Add history notification
+            const historyMsg = document.createElement('div');
+            historyMsg.className = 'text-center py-2 text-xs text-blue-400';
+            historyMsg.textContent = `Showing last ${messages.length} messages`;
+            window.uiModule.chatContainer.appendChild(historyMsg);
+            
+            // Display each message
+            messages.forEach(msg => {
+                if (msg.isFileShare && msg.files && msg.files.length > 0) {
+                    // It's a file share message
+                    window.fileModule.createFileShareMessage(msg.files, msg.userId === userId, msg.userName);
+                } else {
+                    // It's a text message
+                    const isUser = msg.userId === userId;
+                    
+                    if (isUser) {
+                        // For user's own messages, just display them as is
+                        const messageElement = window.uiModule.addMessage(
+                            msg.message, 
+                            true, 
+                            '', 
+                            null
+                        );
+                        messageElement.setAttribute('data-real-message', 'true');
+                    } else {
+                        // For other users' messages, translate if needed
+                        const currentLang = window.translationModule.selectedLanguage;
+                        
+                        if (currentLang) {
+                            // Add message with original content first
+                            const messageElement = window.uiModule.addMessage(
+                                msg.message, 
+                                false, 
+                                '', 
+                                msg.userName
+                            );
+                            messageElement.setAttribute('data-real-message', 'true');
+                            
+                            const messageTextElement = messageElement.querySelector('.message-text');
+                            const translationElement = messageElement.querySelector('.translated-message');
+                            
+                            if (messageTextElement) {
+                                // Store original text
+                                messageTextElement.setAttribute('data-original', msg.message);
+                                messageTextElement.textContent = 'Translating...';
+                                
+                                // Translate the message
+                                window.translationModule.translateText(msg.message, currentLang)
+                                    .then(translatedText => {
+                                        if (translatedText !== msg.message) {
+                                            // Update with translation
+                                            messageTextElement.textContent = translatedText;
+                                            
+                                            if (translationElement) {
+                                                translationElement.innerHTML = `
+                                                    <span class="translated-label">Original</span>
+                                                    <p>${msg.message}</p>
+                                                `;
+                                                translationElement.classList.remove('hidden');
+                                            }
+                                        } else {
+                                            // Just show original
+                                            messageTextElement.textContent = msg.message;
+                                        }
+                                    })
+                                    .catch(() => {
+                                        // On error, show original
+                                        messageTextElement.textContent = msg.message;
+                                    });
+                            }
+                        } else {
+                            // No translation, just show original
+                            const messageElement = window.uiModule.addMessage(
+                                msg.message,
+                                false,
+                                '',
+                                msg.userName
+                            );
+                            messageElement.setAttribute('data-real-message', 'true');
+                        }
+                    }
+                }
+            });
+            
+            // Scroll to bottom after loading history
+            window.uiModule.chatContainer.scrollTop = window.uiModule.chatContainer.scrollHeight;
         }
     });
     

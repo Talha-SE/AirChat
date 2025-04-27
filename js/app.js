@@ -15,29 +15,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const messageText = messageInput.value.trim();
         
         if (messageText) {
-            // Add user message to the UI
-            const userMessageElement = window.uiModule.addMessage(messageText, true);
+            // Add user message to the UI - no translation for own messages
+            window.uiModule.addMessage(messageText, true);
             messageInput.value = '';
             
-            // Send message
+            // Send message to server
             window.socketModule.emitChatMessage(messageText);
-            
-            // For consistency, if the user has translation enabled,
-            // show their own message in their selected language too
-            if (window.translationModule.selectedLanguage && window.translationModule.selectedLanguage !== 'EN') {
-                const translationElement = userMessageElement.querySelector('.translated-message');
-                translationElement.textContent = 'Translating...';
-                translationElement.classList.remove('hidden');
-                
-                window.translationModule.translateText(messageText, window.translationModule.selectedLanguage)
-                    .then(translatedText => {
-                        translationElement.innerHTML = `<span class="text-xs text-slate-400">Translation: </span>${translatedText}`;
-                    })
-                    .catch(err => {
-                        console.error('Translation error:', err);
-                        translationElement.textContent = 'Translation failed';
-                    });
-            }
         }
     });
     
