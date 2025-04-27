@@ -124,12 +124,38 @@ function connectToServer() {
         }
     });
     
+    // Handle expired messages (auto-deleted after 2 hours)
+    socket.on('messages_expired', (data) => {
+        if (data && data.messageIds && data.messageIds.length > 0) {
+            console.log(`Expired messages: ${data.messageIds.length} messages`);
+            
+            // Remove each expired message from the UI
+            data.messageIds.forEach(messageId => {
+                window.uiModule.removeMessageById(messageId, 'expired');
+            });
+            
+            // Show a notification about expired messages
+            const expirationMsg = document.createElement('div');
+            expirationMsg.className = 'text-center py-2 text-xs text-slate-500';
+            expirationMsg.textContent = `${data.messageIds.length} message(s) expired and were removed`;
+            window.uiModule.chatContainer.appendChild(expirationMsg);
+            
+            // Auto-remove notification after 5 seconds
+            setTimeout(() => {
+                expirationMsg.remove();
+            }, 5000);
+        }
+    });
+    
     // Improved chat message handling
     socket.on('chat_message', (data) => {
         console.log('Received chat message:', data);
         
         // Store the message ID
         const messageId = data.id;
+        
+        // Store expiration time if available
+        const expiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
         
         // Only process messages from other users
         if (data.userId && data.userId !== userId) {
@@ -144,7 +170,9 @@ function connectToServer() {
                     data.message, 
                     false,   // Not user's message
                     '',      // No translation yet
-                    data.userName
+                    data.userName,
+                    messageId,
+                    expiresAt
                 );
                 
                 // Find elements to update with translation
@@ -201,8 +229,16 @@ function connectToServer() {
                 window.uiModule.addMessage(data.message, false, '', data.userName);
                 playMessageSound();
             }
-        } else {
-            console.log('Ignoring own message or invalid message');
+        } else if (data.userId === userId) {
+            // It's our own message coming back from the server
+            window.uiModule.addMessage(
+                data.message, 
+                true, 
+                '', 
+                null, 
+                messageId,
+                expiresAt
+            );
         }
     });
 
@@ -233,9 +269,20 @@ function connectToServer() {
             
             // Display each message
             messages.forEach(msg => {
+                // Calculate expiration time if it exists in the message
+                const expiresAt = msg.expiresAt ? 
+                    (msg.expiresAt.toDate ? msg.expiresAt.toDate() : new Date(msg.expiresAt)) : 
+                    null;
+                    
                 if (msg.isFileShare && msg.files && msg.files.length > 0) {
                     // It's a file share message
-                    window.fileModule.createFileShareMessage(msg.files, msg.userId === userId, msg.userName);
+                    window.fileModule.createFileShareMessage(
+                        msg.files, 
+                        msg.userId === userId, 
+                        msg.userName,
+                        msg.id,
+                        expiresAt
+                    );
                 } else {
                     // It's a text message
                     const isUser = msg.userId === userId;
@@ -246,7 +293,9 @@ function connectToServer() {
                             msg.message, 
                             true, 
                             '', 
-                            null
+                            null,
+                            msg.id,
+                            expiresAt
                         );
                         messageElement.setAttribute('data-real-message', 'true');
                     } else {
@@ -408,3 +457,59 @@ window.socketModule = {
 
 // Initialize socket connection
 socket = window.socketModule.connect();
+
+// Start the message expiration timer updater
+setInterval(updateMessageExpirationTimers, 60000); // Update every minute
+
+/**
+ * Update all message expiration timers in the UI
+ */
+function updateMessageExpirationTimers() {
+    const messages = document.querySelectorAll('.message-bubble[data-expires-at]');
+    
+    messages.forEach(messageEl => {
+        const expiresTimestamp = messageEl.getAttribute('data-expires-at');
+        if (!expiresTimestamp) return;
+        
+        const expiresAt = new Date(Number(expiresTimestamp));
+        const now = new Date();
+        
+        // Calculate remaining time
+        const remainingMs = expiresAt - now;
+        
+        if (remainingMs <= 0) {
+            // This will be caught by the server's deletion system
+            return;
+        }
+        
+        // Find or create the expiration indicator
+        let expirationEl = messageEl.querySelector('.message-expiration');
+        if (!expirationEl) {
+            expirationEl = document.createElement('div');
+            expirationEl.className = 'message-expiration';
+            messageEl.querySelector('.message-content').appendChild(expirationEl);
+        }
+        
+        // Format remaining time
+        const remainingMins = Math.floor(remainingMs / 60000);
+        let timeText;
+        
+        if (remainingMins > 60) {
+            const hours = Math.floor(remainingMins / 60);
+            const mins = remainingMins % 60;
+            timeText = `${hours}h ${mins}m`;
+        } else {
+            timeText = `${remainingMins}m`;
+        }
+        
+        expirationEl.textContent = `Expires in ${timeText}`;
+        
+        // Update urgency class based on remaining time
+        expirationEl.classList.remove('urgent', 'warning');
+        if (remainingMins < 10) {
+            expirationEl.classList.add('urgent');
+        } else if (remainingMins < 30) {
+            expirationEl.classList.add('warning');
+        }
+    });
+}

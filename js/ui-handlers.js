@@ -16,9 +16,10 @@ const languageSelectors = document.querySelectorAll('.language-selector');
  * @param {string} translatedText - Translated message text (optional)
  * @param {string} senderName - Name of the sender (optional)
  * @param {string} messageId - ID of the message (optional)
+ * @param {Date} expiresAt - When the message expires (optional)
  * @returns {HTMLElement} The created message element
  */
-function addMessage(text, isUser, translatedText = '', senderName = null, messageId = null) {
+function addMessage(text, isUser, translatedText = '', senderName = null, messageId = null, expiresAt = null) {
     const now = new Date();
     const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
@@ -28,6 +29,11 @@ function addMessage(text, isUser, translatedText = '', senderName = null, messag
     // Add message ID as data attribute if provided
     if (messageId) {
         messageDiv.dataset.messageId = messageId;
+    }
+    
+    // Add expiration time as data attribute if provided
+    if (expiresAt) {
+        messageDiv.dataset.expiresAt = expiresAt.getTime();
     }
     
     const messageContent = document.createElement('div');
@@ -115,6 +121,38 @@ function addMessage(text, isUser, translatedText = '', senderName = null, messag
         messageDiv.appendChild(messageContent);
     }
     
+    // Add expiration indicator if message expires
+    if (expiresAt) {
+        const remainingMs = expiresAt - now;
+        if (remainingMs > 0) {
+            // Format remaining time
+            const remainingMins = Math.floor(remainingMs / 60000);
+            let timeText;
+            
+            if (remainingMins > 60) {
+                const hours = Math.floor(remainingMins / 60);
+                const mins = remainingMins % 60;
+                timeText = `${hours}h ${mins}m`;
+            } else {
+                timeText = `${remainingMins}m`;
+            }
+            
+            // Create expiration element
+            const expirationEl = document.createElement('div');
+            expirationEl.className = 'message-expiration';
+            expirationEl.textContent = `Expires in ${timeText}`;
+            
+            // Add urgency class based on remaining time
+            if (remainingMins < 10) {
+                expirationEl.classList.add('urgent');
+            } else if (remainingMins < 30) {
+                expirationEl.classList.add('warning');
+            }
+            
+            messageContent.appendChild(expirationEl);
+        }
+    }
+    
     // Insert before typing indicator
     chatContainer.insertBefore(messageDiv, typingIndicator || null);
     chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -194,8 +232,9 @@ function deleteMessage(messageId, messageElement) {
 /**
  * Remove a message from the UI based on message ID
  * @param {string} messageId - ID of the message to remove
+ * @param {string} reason - Reason for removal ('deleted' or 'expired')
  */
-function removeMessageById(messageId) {
+function removeMessageById(messageId, reason = 'deleted') {
     const messageElement = document.querySelector(`.message-bubble[data-message-id="${messageId}"]`);
     
     if (messageElement) {
@@ -212,16 +251,19 @@ function removeMessageById(messageId) {
             setTimeout(() => {
                 messageElement.remove();
                 
-                // Add deletion notification
-                const deletionMsg = document.createElement('div');
-                deletionMsg.className = 'text-center py-1 text-xs text-slate-500';
-                deletionMsg.textContent = 'A message was deleted';
-                chatContainer.appendChild(deletionMsg);
-                
-                // Remove notification after 5 seconds
-                setTimeout(() => {
-                    deletionMsg.remove();
-                }, 5000);
+                // Only show deletion notification for manually deleted messages
+                if (reason === 'deleted') {
+                    // Add deletion notification
+                    const deletionMsg = document.createElement('div');
+                    deletionMsg.className = 'text-center py-1 text-xs text-slate-500';
+                    deletionMsg.textContent = 'A message was deleted';
+                    chatContainer.appendChild(deletionMsg);
+                    
+                    // Remove notification after 5 seconds
+                    setTimeout(() => {
+                        deletionMsg.remove();
+                    }, 5000);
+                }
                 
             }, 300);
         }, 100);

@@ -15,6 +15,90 @@ const { cloudinary, upload } = require('./cloudinary-config');
 // Load environment variables
 dotenv.config();
 
+// Message expiration time in milliseconds (2 hours)
+const MESSAGE_EXPIRATION_TIME = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
+
+// Initialize message deletion worker
+function initializeMessageExpirationSystem() {
+  console.log('Initializing message expiration system...');
+  
+  // Run initially after server start
+  setTimeout(() => {
+    deleteExpiredMessages();
+  }, 30000); // Wait 30 seconds after startup before first check
+  
+  // Then schedule to run every 10 minutes
+  setInterval(() => {
+    deleteExpiredMessages();
+  }, 10 * 60 * 1000); // Check every 10 minutes
+}
+
+// Function to delete messages older than 2 hours
+async function deleteExpiredMessages() {
+  try {
+    console.log('Checking for expired messages...');
+    
+    // Calculate the cutoff time (2 hours ago)
+    const cutoffTime = new Date(Date.now() - MESSAGE_EXPIRATION_TIME);
+    
+    // Query for messages older than the cutoff time
+    const expiredMessagesSnapshot = await db.collection('messages')
+      .where('timestamp', '<', admin.firestore.Timestamp.fromDate(cutoffTime))
+      .limit(100) // Process in batches to avoid overwhelming the database
+      .get();
+    
+    if (expiredMessagesSnapshot.empty) {
+      console.log('No expired messages found');
+      return;
+    }
+    
+    console.log(`Found ${expiredMessagesSnapshot.size} expired messages to delete`);
+    
+    // Create a batch for efficient deletion
+    const batch = db.batch();
+    const deletedMessageIds = [];
+    
+    // Add each message to the batch delete operation
+    expiredMessagesSnapshot.forEach(doc => {
+      const messageData = doc.data();
+      const messageId = doc.id;
+      
+      // Add to batch deletion
+      batch.delete(doc.ref);
+      deletedMessageIds.push(messageId);
+      
+      // If message has files, move them to orphanedFiles collection
+      if (messageData.files && messageData.files.length > 0) {
+        messageData.files.forEach(file => {
+          if (file.fileId) {
+            // Don't delete files, just track that their parent message was auto-expired
+            const orphanedFileRef = db.collection('orphanedFiles').doc(file.fileId);
+            batch.set(orphanedFileRef, {
+              ...file,
+              originalMessageId: messageId,
+              autoDeletedAt: admin.firestore.FieldValue.serverTimestamp(),
+              userId: messageData.userId,
+              expirationReason: 'auto-deleted after 2 hours'
+            }, { merge: true });
+          }
+        });
+      }
+    });
+    
+    // Commit the batch operation
+    await batch.commit();
+    console.log(`Successfully deleted ${deletedMessageIds.length} expired messages`);
+    
+    // Notify all connected clients about the deleted messages
+    if (io && deletedMessageIds.length > 0) {
+      io.emit('messages_expired', { messageIds: deletedMessageIds });
+    }
+    
+  } catch (error) {
+    console.error('Error deleting expired messages:', error);
+  }
+}
+
 const app = express();
 const server = http.createServer(app);
 
@@ -380,11 +464,15 @@ io.on('connection', (socket) => {
   });
   
   socket.on('chat_message', async (data) => {
+    // Add expiration time to message data for client awareness
+    const expirationTime = new Date(Date.now() + MESSAGE_EXPIRATION_TIME);
+    
     // Ensure message has the source language
     const completeData = {
       ...data,
       sourceLang: data.sourceLang || 'EN', // Default to English if not specified
-      timestamp: admin.firestore.FieldValue.serverTimestamp()
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromDate(expirationTime)
     };
     
     try {
@@ -394,13 +482,16 @@ io.on('connection', (socket) => {
         userName: completeData.userName,
         message: completeData.message,
         sourceLang: completeData.sourceLang,
-        timestamp: completeData.timestamp
+        timestamp: completeData.timestamp,
+        expiresAt: completeData.expiresAt // Store expiration time
       });
       
       // Add Firestore ID to the emitted message
       completeData.id = messageRef.id;
       // Convert timestamp for client
       completeData.timestamp = new Date();
+      // Add expiration time to client format
+      completeData.expiresAt = expirationTime;
     } catch (error) {
       console.error('Error saving message to database:', error);
     }
@@ -523,4 +614,6 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  // Start the message expiration system
+  initializeMessageExpirationSystem();
 });

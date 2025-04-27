@@ -211,14 +211,26 @@ async function deleteFile(fileId, fileItemElement) {
  * @param {Array} fileMetadata - Array of file metadata objects 
  * @param {boolean} isUser - Whether the message is from the current user
  * @param {string} senderName - Name of the sender (optional)
+ * @param {string} messageId - ID of the message (optional)
+ * @param {Date} expiresAt - When the message expires (optional)
  * @returns {HTMLElement} The created message element
  */
-function createFileShareMessage(fileMetadata, isUser, senderName = null) {
+function createFileShareMessage(fileMetadata, isUser, senderName = null, messageId = null, expiresAt = null) {
     const now = new Date();
     const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
     const messageDiv = document.createElement('div');
     messageDiv.className = `message-bubble ${isUser ? 'user-message' : 'other-message'} w-fit`;
+    
+    // Add message ID as data attribute if provided
+    if (messageId) {
+        messageDiv.dataset.messageId = messageId;
+    }
+    
+    // Add expiration time as data attribute if provided
+    if (expiresAt) {
+        messageDiv.dataset.expiresAt = expiresAt.getTime();
+    }
     
     const messageContent = document.createElement('div');
     messageContent.className = 'message-content';
@@ -380,6 +392,38 @@ function createFileShareMessage(fileMetadata, isUser, senderName = null) {
     // Insert before typing indicator
     window.uiModule.chatContainer.insertBefore(messageDiv, window.uiModule.typingIndicator);
     window.uiModule.chatContainer.scrollTop = window.uiModule.chatContainer.scrollHeight;
+    
+    // Add expiration indicator if message expires
+    if (expiresAt) {
+        const remainingMs = expiresAt - now;
+        if (remainingMs > 0) {
+            // Format remaining time
+            const remainingMins = Math.floor(remainingMs / 60000);
+            let timeText;
+            
+            if (remainingMins > 60) {
+                const hours = Math.floor(remainingMins / 60);
+                const mins = remainingMins % 60;
+                timeText = `${hours}h ${mins}m`;
+            } else {
+                timeText = `${remainingMins}m`;
+            }
+            
+            // Create expiration element
+            const expirationEl = document.createElement('div');
+            expirationEl.className = 'message-expiration';
+            expirationEl.textContent = `Expires in ${timeText}`;
+            
+            // Add urgency class based on remaining time
+            if (remainingMins < 10) {
+                expirationEl.classList.add('urgent');
+            } else if (remainingMins < 30) {
+                expirationEl.classList.add('warning');
+            }
+            
+            messageContent.appendChild(expirationEl);
+        }
+    }
     
     return messageDiv;
 }
