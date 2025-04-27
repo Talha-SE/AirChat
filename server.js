@@ -250,6 +250,75 @@ app.delete('/file/:fileId', async (req, res) => {
   }
 });
 
+// API endpoint to delete a message
+app.delete('/api/message/:messageId', async (req, res) => {
+  try {
+    const messageId = req.params.messageId;
+    const userId = req.query.userId || req.body.userId;
+    
+    // Get the message from Firestore
+    const messageDoc = await db.collection('messages').doc(messageId).get();
+    
+    if (!messageDoc.exists) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+    
+    const messageData = messageDoc.data();
+    
+    // Check if user is the sender of the message
+    if (messageData.userId !== userId) {
+      return res.status(403).json({ error: 'You do not have permission to delete this message' });
+    }
+    
+    // Check if message has file attachments
+    if (messageData.files && messageData.files.length > 0) {
+      console.log(`Message ${messageId} has ${messageData.files.length} file attachments that will be kept in Cloudinary`);
+      
+      // Optional: You could move file references to a separate collection to keep track of them
+      // This prevents files from becoming "orphaned" in Cloudinary
+      try {
+        const batch = db.batch();
+        
+        for (const file of messageData.files) {
+          if (file.fileId) {
+            // Create or update an entry in an "orphanedFiles" collection
+            const orphanedFileRef = db.collection('orphanedFiles').doc(file.fileId);
+            batch.set(orphanedFileRef, {
+              ...file,
+              originalMessageId: messageId,
+              deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+              userId: messageData.userId
+            }, { merge: true });
+          }
+        }
+        
+        await batch.commit();
+        console.log(`Preserved file references for message ${messageId} in orphanedFiles collection`);
+      } catch (fileError) {
+        console.error('Error preserving file references:', fileError);
+        // Continue with message deletion even if preserving files fails
+      }
+    }
+    
+    // Delete message from Firestore
+    await db.collection('messages').doc(messageId).delete();
+    console.log(`Message deleted from Firestore: ${messageId}`);
+    
+    // Broadcast message deletion to all connected clients
+    io.emit('message_deleted', { messageId: messageId });
+    
+    res.json({ 
+      success: true, 
+      message: 'Message deleted successfully',
+      messageId: messageId
+    });
+    
+  } catch (error) {
+    console.error('Message deletion error:', error);
+    res.status(500).json({ error: 'Message deletion failed', details: error.message });
+  }
+});
+
 // Socket.io connection handling
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
@@ -364,8 +433,37 @@ io.on('connection', (socket) => {
     io.emit('file_shared', data);
   });
   
-  // ...existing socket event handlers...
-
+  socket.on('delete_message', async (data) => {
+    try {
+      // Get the message from Firestore
+      const messageDoc = await db.collection('messages').doc(data.messageId).get();
+      
+      if (!messageDoc.exists) {
+        socket.emit('error', { message: 'Message not found' });
+        return;
+      }
+      
+      const messageData = messageDoc.data();
+      
+      // Check if user is the sender of the message
+      if (messageData.userId !== data.userId) {
+        socket.emit('error', { message: 'You do not have permission to delete this message' });
+        return;
+      }
+      
+      // Delete the message from Firestore
+      await db.collection('messages').doc(data.messageId).delete();
+      
+      // Broadcast message deletion to all clients
+      io.emit('message_deleted', { messageId: data.messageId });
+      
+      console.log(`Message ${data.messageId} deleted by user ${data.userId}`);
+    } catch (error) {
+      console.error('Error deleting message via socket:', error);
+      socket.emit('error', { message: 'Failed to delete message', details: error.message });
+    }
+  });
+  
   socket.on('disconnect', () => {
     if (socket.userData) {
       console.log(`${socket.userData.userName} (${socket.userData.userId}) left the chat`);

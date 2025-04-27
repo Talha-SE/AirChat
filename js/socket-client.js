@@ -115,9 +115,21 @@ function connectToServer() {
         }
     });
     
+    // Handle message deleted events from the server
+    socket.on('message_deleted', (data) => {
+        if (data && data.messageId) {
+            console.log(`Message deleted: ${data.messageId}`);
+            // Remove the message from the UI
+            window.uiModule.removeMessageById(data.messageId);
+        }
+    });
+    
     // Improved chat message handling
     socket.on('chat_message', (data) => {
         console.log('Received chat message:', data);
+        
+        // Store the message ID
+        const messageId = data.id;
         
         // Only process messages from other users
         if (data.userId && data.userId !== userId) {

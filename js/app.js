@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (messageText) {
             // Add user message to the UI - no translation for own messages
+            // We don't have message ID yet as it will be assigned by the server
             window.uiModule.addMessage(messageText, true);
             messageInput.value = '';
             
