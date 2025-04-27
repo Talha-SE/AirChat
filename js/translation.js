@@ -32,25 +32,15 @@ async function translateText(text, targetLang) {
         
         // Try server translation first
         try {
-            // For English translations, make sure we specify source language if possible
-            // This helps translation services properly translate to English
-            let requestBody = {
-                text: [text],
-                target_lang: targetLang
-            };
-            
-            // If target is English, add source language detection
-            // This ensures the API doesn't skip translation because it thinks the text is already English
-            if (targetLang === 'EN') {
-                requestBody.formality = 'default';  // DeepL parameter that can help with English translation
-            }
-            
             const response = await fetch('/translate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(requestBody)
+                body: JSON.stringify({
+                    text: text,
+                    targetLang: targetLang
+                })
             });
             
             console.log('Server response status:', response.status);

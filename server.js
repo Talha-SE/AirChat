@@ -48,29 +48,6 @@ app.post('/translate', async (req, res) => {
     }
     
     // Configure DeepL API request
-    const requestBody = {
-      text: [text],
-      target_lang: targetLang
-    };
-    
-    // For English as target language, try to detect source language
-    // This helps when translating to English, as DeepL might skip translation
-    // if it thinks the source is already English
-    if (targetLang === 'EN') {
-      // Include formality parameter for better results
-      requestBody.formality = 'default';
-      
-      // If the text appears to be non-English (simplified check)
-      // Check if the text contains non-ASCII characters which might indicate non-English text
-      const hasNonASCII = /[^\x00-\x7F]/.test(text);
-      const probablyNonEnglish = hasNonASCII || !/\b(the|a|an|is|are|was|were)\b/i.test(text);
-      
-      if (probablyNonEnglish) {
-        // Tell DeepL to auto-detect the source language
-        console.log("Text appears to be non-English, enabling auto-detection for EN translation");
-      }
-    }
-    
     const response = await axios({
       method: 'POST',
       url: 'https://api-free.deepl.com/v2/translate',
@@ -78,7 +55,10 @@ app.post('/translate', async (req, res) => {
         'Authorization': `DeepL-Auth-Key ${deepLApiKey}`,
         'Content-Type': 'application/json'
       },
-      data: requestBody
+      data: {
+        text: [text],
+        target_lang: targetLang
+      }
     });
     
     if (response.data && response.data.translations && response.data.translations.length > 0) {
