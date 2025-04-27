@@ -125,28 +125,39 @@ function connectToServer() {
                     messageElement.setAttribute('data-real-message', 'true');
                     
                     // If translation is enabled and it's not user's message
-                    if (window.translationModule.selectedLanguage && !isUser) {
-                        const messageTextElement = messageElement.querySelector('p.leading-relaxed');
+                    const currentLang = window.translationModule.selectedLanguage;
+                    if (currentLang && !isUser) {
+                        const messageTextElement = messageElement.querySelector('.message-text');
                         const translationElement = messageElement.querySelector('.translated-message');
                         
-                        // Store the original text as data attribute
-                        messageTextElement.setAttribute('data-original', msg.message);
-                        
-                        // Translate the message
-                        window.translationModule.translateText(msg.message, window.translationModule.selectedLanguage)
-                            .then(translatedText => {
-                                // Update the main message content with translation
-                                messageTextElement.textContent = translatedText;
-                                
-                                // Show original text in translation element
-                                if (translationElement) {
-                                    translationElement.innerHTML = `<span class="text-xs text-slate-400">Original: </span>${msg.message}`;
-                                    translationElement.classList.remove('hidden');
-                                }
-                            })
-                            .catch(err => {
-                                console.error('Translation error:', err);
-                            });
+                        if (messageTextElement) {
+                            // Store the original text as data attribute
+                            messageTextElement.setAttribute('data-original', msg.message);
+                            
+                            // Show translating state
+                            messageTextElement.textContent = 'Translating...';
+                            
+                            // Translate the message
+                            window.translationModule.translateText(msg.message, currentLang)
+                                .then(translatedText => {
+                                    // Update the main message content with translation
+                                    messageTextElement.textContent = translatedText;
+                                    
+                                    // Show original text in translation element
+                                    if (translationElement) {
+                                        translationElement.innerHTML = `<span class="translated-label">Original</span><p>${msg.message}</p>`;
+                                        translationElement.classList.remove('hidden');
+                                    }
+                                })
+                                .catch(err => {
+                                    console.error('Translation error:', err);
+                                    messageTextElement.textContent = msg.message; // Revert to original on error
+                                    if (translationElement) {
+                                        translationElement.innerHTML = `<span class="translated-label">Translation Failed</span><p>Could not translate message</p>`;
+                                        translationElement.classList.remove('hidden');
+                                    }
+                                });
+                        }
                     }
                 }
             });
@@ -191,21 +202,28 @@ function connectToServer() {
         if (data.userId && data.userId !== userId) {
             console.log('Adding message from:', data.userName);
             
+            const currentLang = window.translationModule.selectedLanguage;
+            
             // If translation is enabled and target language is different from source
-            if (window.translationModule.selectedLanguage && (!data.sourceLang || data.sourceLang !== window.translationModule.selectedLanguage)) {
-                // First add the message in "translating" state
-                const otherMessageElement = window.uiModule.addMessage(data.message, false, 'Translating...', data.userName);
-                const messageTextElement = otherMessageElement.querySelector('p.leading-relaxed');
+            if (currentLang && (!data.sourceLang || data.sourceLang !== currentLang)) {
+                // First add the message in original form
+                const otherMessageElement = window.uiModule.addMessage(data.message, false, data.message, data.userName);
+                const messageTextElement = otherMessageElement.querySelector('.message-text');
                 const translationElement = otherMessageElement.querySelector('.translated-message');
-                
-                // Remove the hidden class from translation element
-                if (translationElement) translationElement.classList.remove('hidden');
                 
                 // Play notification sound
                 playMessageSound();
                 
+                // Remove the hidden class from translation element
+                if (translationElement) translationElement.classList.remove('hidden');
+                
+                // Show translating state
+                if (messageTextElement) {
+                    messageTextElement.textContent = 'Translating...';
+                }
+                
                 // Translate received message
-                window.translationModule.translateText(data.message, window.translationModule.selectedLanguage)
+                window.translationModule.translateText(data.message, currentLang)
                     .then(translatedText => {
                         // Update the main message content with translation
                         if (messageTextElement) {
@@ -216,12 +234,17 @@ function connectToServer() {
                         
                         // Show original text in translation element
                         if (translationElement) {
-                            translationElement.innerHTML = `<span class="text-xs text-slate-400">Original: </span>${data.message}`;
+                            translationElement.innerHTML = `<span class="translated-label">Original</span><p>${data.message}</p>`;
                         }
                     })
                     .catch(err => {
                         console.error('Translation error:', err);
-                        if (translationElement) translationElement.textContent = 'Translation failed';
+                        if (messageTextElement) {
+                            messageTextElement.textContent = data.message; // Revert to original on error
+                        }
+                        if (translationElement) {
+                            translationElement.innerHTML = `<span class="translated-label">Translation Failed</span><p>Could not translate message</p>`;
+                        }
                     });
             } else {
                 // No translation needed, show as is

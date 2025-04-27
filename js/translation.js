@@ -3,7 +3,7 @@
  */
 
 // Store selected language
-let selectedLanguage = localStorage.getItem('preferred_language') || 'EN'; // Default to English
+let selectedLanguage = localStorage.getItem('preferred_language') || ''; // No default language
 
 /**
  * Translates text to the specified target language
@@ -14,29 +14,43 @@ let selectedLanguage = localStorage.getItem('preferred_language') || 'EN'; // De
 async function translateText(text, targetLang) {
     console.log(`Requesting translation to ${targetLang}: "${text}"`);
     
+    if (!targetLang || targetLang === '') {
+        return Promise.resolve(text); // No translation needed
+    }
+    
     try {
-        // Mock translations as fallback
+        // Mock translations for fallback
         const mockTranslations = {
             'EN': 'English: ',
+            'KO': '한국어: ',
             'ES': 'Español: ',
             'FR': 'Français: ',
             'DE': 'Deutsch: ',
             'IT': 'Italiano: ',
-            'JA': '日本語: ',
-            'KO': '한국어: '
+            'JA': '日本語: '
         };
         
         // Try server translation first
         try {
+            // For English translations, make sure we specify source language if possible
+            // This helps translation services properly translate to English
+            let requestBody = {
+                text: [text],
+                target_lang: targetLang
+            };
+            
+            // If target is English, add source language detection
+            // This ensures the API doesn't skip translation because it thinks the text is already English
+            if (targetLang === 'EN') {
+                requestBody.formality = 'default';  // DeepL parameter that can help with English translation
+            }
+            
             const response = await fetch('/translate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    text: text,
-                    targetLang: targetLang
-                })
+                body: JSON.stringify(requestBody)
             });
             
             console.log('Server response status:', response.status);

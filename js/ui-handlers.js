@@ -52,6 +52,7 @@ function addMessage(text, isUser, translatedText = '', senderName = null) {
                 <span class="translated-label">Translated</span>
                 <p>${translatedText}</p>
             `;
+            translatedContainer.classList.remove('hidden');
         }
         
         // Append all elements
@@ -83,7 +84,7 @@ function addMessage(text, isUser, translatedText = '', senderName = null) {
         
         // Create translated message container
         const translatedContainer = document.createElement('div');
-        translatedContainer.className = `translated-message ${window.translationModule.selectedLanguage ? '' : 'hidden'}`;
+        translatedContainer.className = `translated-message ${translatedText ? '' : 'hidden'}`;
         if (translatedText) {
             translatedContainer.innerHTML = `
                 <span class="translated-label">Original</span>
@@ -99,7 +100,7 @@ function addMessage(text, isUser, translatedText = '', senderName = null) {
     }
     
     // Insert before typing indicator
-    chatContainer.insertBefore(messageDiv, typingIndicator);
+    chatContainer.insertBefore(messageDiv, typingIndicator || null);
     chatContainer.scrollTop = chatContainer.scrollHeight;
     
     // Return the message element so we can update it later
@@ -111,6 +112,8 @@ function addMessage(text, isUser, translatedText = '', senderName = null) {
 const initialLanguage = Array.from(languageSelectors).find(el => el.dataset.lang === window.translationModule.selectedLanguage);
 if (initialLanguage) {
     translateToggle.innerHTML = `<i class="fas fa-language text-blue-400"></i><span class="ml-2">${initialLanguage.textContent}</span>`;
+} else {
+    translateToggle.innerHTML = `<i class="fas fa-language text-blue-400"></i><span class="ml-2">Translate</span>`;
 }
 
 // Toggle translation dropdown
@@ -140,39 +143,50 @@ languageSelectors.forEach(selector => {
         
         // Only retranslate messages if the language changed
         if (previousLanguage !== newLanguage) {
+            console.log(`Language changed from ${previousLanguage} to ${newLanguage}, retranslating messages`);
             // Get all messages from others
             const otherMessages = document.querySelectorAll('.message-bubble.other-message');
             
             otherMessages.forEach(messageEl => {
-                const messageText = messageEl.querySelector('p.leading-relaxed');
+                const messageText = messageEl.querySelector('.message-text');
                 const translationEl = messageEl.querySelector('.translated-message');
+                
+                if (!messageText) return; // Skip if no message text element
                 
                 // Get original text (if available) or current text
                 const originalText = messageText.getAttribute('data-original') || messageText.textContent;
                 
-                // Show translating state
-                messageText.textContent = 'Translating...';
-                
-                // Translate to new language
-                window.translationModule.translateText(originalText, newLanguage)
-                    .then(translatedText => {
-                        // Update main message content
-                        messageText.textContent = translatedText;
-                        
-                        // Show original in translation area
-                        if (translationEl) {
-                            translationEl.innerHTML = `<span class="text-xs text-slate-400">Original: </span>${originalText}`;
-                            translationEl.classList.remove('hidden');
-                        }
-                    })
-                    .catch(err => {
-                        console.error('Translation error:', err);
-                        messageText.textContent = originalText; // Revert to original on error
-                        if (translationEl) {
-                            translationEl.textContent = 'Translation failed';
-                            translationEl.classList.remove('hidden');
-                        }
-                    });
+                if (newLanguage) {
+                    // Show translating state
+                    messageText.textContent = 'Translating...';
+                    
+                    // Translate to new language
+                    window.translationModule.translateText(originalText, newLanguage)
+                        .then(translatedText => {
+                            // Update main message content
+                            messageText.textContent = translatedText;
+                            
+                            // Show original in translation area
+                            if (translationEl) {
+                                translationEl.innerHTML = `<span class="translated-label">Original</span><p>${originalText}</p>`;
+                                translationEl.classList.remove('hidden');
+                            }
+                        })
+                        .catch(err => {
+                            console.error('Translation error:', err);
+                            messageText.textContent = originalText; // Revert to original on error
+                            if (translationEl) {
+                                translationEl.innerHTML = `<span class="translated-label">Translation Failed</span><p>Could not translate message</p>`;
+                                translationEl.classList.remove('hidden');
+                            }
+                        });
+                } else {
+                    // If no language selected, show original text
+                    messageText.textContent = originalText;
+                    if (translationEl) {
+                        translationEl.classList.add('hidden');
+                    }
+                }
             });
         }
     });

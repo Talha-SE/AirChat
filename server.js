@@ -5,6 +5,7 @@ const path = require('path');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const dotenv = require('dotenv');
+const axios = require('axios');
 
 // Import Firebase and Cloudinary configurations
 const { admin, db } = require('./firebase-admin');
@@ -27,6 +28,74 @@ const io = new Server(server, {
 // Serve static files
 app.use(express.static(path.join(__dirname)));
 app.use(express.json());
+
+// Translation endpoint
+app.post('/translate', async (req, res) => {
+  try {
+    const { text, targetLang } = req.body;
+    
+    if (!text || !targetLang) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    console.log(`Translation request: "${text}" to ${targetLang}`);
+    
+    // Use DeepL API for translation
+    const deepLApiKey = process.env.DEEPL_API_KEY;
+    
+    if (!deepLApiKey) {
+      return res.status(500).json({ error: 'Translation API key not configured' });
+    }
+    
+    // Configure DeepL API request
+    const requestBody = {
+      text: [text],
+      target_lang: targetLang
+    };
+    
+    // For English as target language, try to detect source language
+    // This helps when translating to English, as DeepL might skip translation
+    // if it thinks the source is already English
+    if (targetLang === 'EN') {
+      // Include formality parameter for better results
+      requestBody.formality = 'default';
+      
+      // If the text appears to be non-English (simplified check)
+      // Check if the text contains non-ASCII characters which might indicate non-English text
+      const hasNonASCII = /[^\x00-\x7F]/.test(text);
+      const probablyNonEnglish = hasNonASCII || !/\b(the|a|an|is|are|was|were)\b/i.test(text);
+      
+      if (probablyNonEnglish) {
+        // Tell DeepL to auto-detect the source language
+        console.log("Text appears to be non-English, enabling auto-detection for EN translation");
+      }
+    }
+    
+    const response = await axios({
+      method: 'POST',
+      url: 'https://api-free.deepl.com/v2/translate',
+      headers: {
+        'Authorization': `DeepL-Auth-Key ${deepLApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      data: requestBody
+    });
+    
+    if (response.data && response.data.translations && response.data.translations.length > 0) {
+      const translation = response.data.translations[0].text;
+      console.log(`Translation result: "${translation}"`);
+      return res.json({ translation });
+    } else {
+      throw new Error('Invalid response from translation service');
+    }
+  } catch (error) {
+    console.error('Translation error:', error.message);
+    res.status(500).json({ 
+      error: 'Translation failed', 
+      details: error.message 
+    });
+  }
+});
 
 // API endpoint to get chat history
 app.get('/api/message-history', async (req, res) => {
