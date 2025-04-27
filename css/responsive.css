@@ -1,0 +1,180 @@
+/* Base styles for all devices */
+body {
+    touch-action: manipulation;
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Small phones (up to 640px) */
+@media (max-width: 640px) {
+    .container {
+        padding: 0 !important;
+        height: 100vh !important;
+        max-width: 100% !important;
+        width: 100% !important;
+    }
+    
+    .app-header {
+        padding: 0.75rem !important;
+        border-radius: 0 0 1rem 1rem !important;
+    }
+    
+    .chat-container {
+        margin: 0 !important;
+        border-radius: 0 !important;
+        padding: 0.75rem !important;
+    }
+    
+    .message-bubble {
+        max-width: 85% !important;
+        padding: 0.75rem !important;
+        margin-bottom: 0.75rem;
+    }
+    
+    .message-form-container {
+        padding: 0.75rem !important;
+        border-radius: 1rem 1rem 0 0 !important;
+    }
+    
+    #language-dropdown {
+        right: -2rem;
+        max-height: 80vh;
+        overflow-y: auto;
+    }
+    
+    /* Adjust header for smaller screens */
+    .app-header h1 {
+        font-size: 1.2rem !important;
+    }
+    
+    .app-header .w-12 {
+        width: 2.5rem !important;
+        height: 2.5rem !important;
+    }
+    
+    /* Increase size of action buttons */
+    #message-form button[type="submit"] {
+        width: 3.5rem !important;
+        height: 3.5rem !important;
+    }
+}
+
+/* Tablets (641px to 1024px) */
+@media (min-width: 641px) and (max-width: 1024px) {
+    .container {
+        max-width: 95% !important;
+    }
+    
+    .message-bubble {
+        max-width: 90% !important;
+    }
+    
+    .app-header {
+        padding: 1rem !important;
+    }
+    
+    .message-form-container {
+        padding: 1rem !important;
+    }
+    
+    #language-dropdown {
+        right: 0;
+        width: 18rem;
+    }
+}
+
+/* Landscape orientation for mobile devices */
+@media (max-height: 500px) and (orientation: landscape) {
+    .container {
+        height: 100vh !important;
+        padding: 0 !important;
+    }
+    
+    .app-header {
+        padding: 0.5rem !important;
+    }
+    
+    .chat-container {
+        padding: 0.5rem !important;
+    }
+    
+    .welcome-container {
+        padding: 0.5rem !important;
+    }
+    
+    .message-form-container {
+        padding: 0.5rem !important;
+    }
+}
+
+/* Touch-friendly improvements */
+button, .language-selector, .file-item, a {
+    cursor: pointer;
+    touch-action: manipulation;
+    min-height: 44px; /* Apple's recommended minimum tap target size */
+}
+
+/* Make action buttons larger for touch */
+.message-form-container button,
+#translate-toggle,
+.language-selector {
+    font-size: 1rem;
+    padding: 0.75rem !important;
+}
+
+/* Add mobile app feel */
+@media (display-mode: standalone) {
+    body {
+        overscroll-behavior: none;
+    }
+}
+
+/* Improve scrolling */
+.chat-container {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    overscroll-behavior-y: contain;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+/* Fix image display on mobile */
+img.max-h-64 {
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+}
+
+/* Fix message input on mobile */
+#message-input {
+    font-size: 16px !important; /* Prevent iOS zoom on focus */
+    padding-right: 5rem !important; /* Ensure there's space for buttons */
+}
+
+/* Improve file attachment display */
+.file-item {
+    width: 100%;
+}
+
+/* Better tap targets for form controls */
+.message-form-container .absolute button {
+    margin: 0 0.2rem;
+    padding: 0.5rem !important;
+}
+
+/* Prevent text selection on double-tap */
+p, h1, h2, span, div {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* Allow text selection in message content */
+.message-bubble p {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+/* Smooth animations for better performance */
+* {
+    transition: all 0.2s ease;
+}
