@@ -6,6 +6,7 @@ const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const dotenv = require('dotenv');
 const axios = require('axios');
+const fs = require('fs');
 
 // Import Firebase and Cloudinary configurations
 const { admin, db } = require('./firebase-admin');
@@ -394,9 +395,30 @@ function generateUniqueName() {
   return `${first} ${last}`;
 }
 
-// Serve index.html
+// Create a function to inject environment variables into the HTML
+function injectEnvVarsIntoHtml(htmlContent) {
+  return htmlContent
+    .replace(/%%FIREBASE_API_KEY%%/g, process.env.FIREBASE_API_KEY || '')
+    .replace(/%%FIREBASE_AUTH_DOMAIN%%/g, process.env.FIREBASE_AUTH_DOMAIN || '')
+    .replace(/%%FIREBASE_PROJECT_ID%%/g, process.env.FIREBASE_PROJECT_ID || '')
+    .replace(/%%FIREBASE_STORAGE_BUCKET%%/g, process.env.FIREBASE_STORAGE_BUCKET || '')
+    .replace(/%%FIREBASE_MESSAGING_SENDER_ID%%/g, process.env.FIREBASE_MESSAGING_SENDER_ID || '')
+    .replace(/%%FIREBASE_APP_ID%%/g, process.env.FIREBASE_APP_ID || '')
+    .replace(/%%FIREBASE_MEASUREMENT_ID%%/g, process.env.FIREBASE_MEASUREMENT_ID || '');
+}
+
+// Modify the route to serve index.html with injected variables
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  const indexPath = path.join(__dirname, 'index.html');
+  fs.readFile(indexPath, 'utf8', (err, htmlContent) => {
+    if (err) {
+      console.error("Error reading index.html:", err);
+      return res.status(500).send('Error loading application');
+    }
+    // Inject environment variables
+    const processedHtml = injectEnvVarsIntoHtml(htmlContent);
+    res.send(processedHtml);
+  });
 });
 
 // Start the server

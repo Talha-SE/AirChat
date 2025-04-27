@@ -1,12 +1,12 @@
 // Firebase client configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyArfInSiPzp-ozNXFOMz99FEiHydPeN5zs",
-  authDomain: "w-chat-74ec1.firebaseapp.com",
-  projectId: "w-chat-74ec1",
-  storageBucket: "w-chat-74ec1.firebasestorage.app",
-  messagingSenderId: "974879028384",
-  appId: "1:974879028384:web:4d23180119bb49b4cf05c5",
-  measurementId: "G-JMFLJ3VS0H"
+  apiKey: process.env.FIREBASE_API_KEY,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.FIREBASE_APP_ID,
+  measurementId: process.env.FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase for client-side

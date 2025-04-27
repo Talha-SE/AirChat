@@ -2,23 +2,26 @@
  * Firebase client integration for GlobalTalk chat application
  */
 
-// Firebase configuration object
+// Firebase configuration object - using window variables that will be set in index.html
 const firebaseConfig = {
-  apiKey: "AIzaSyArfInSiPzp-ozNXFOMz99FEiHydPeN5zs",
-  authDomain: "w-chat-74ec1.firebaseapp.com",
-  projectId: "w-chat-74ec1",
-  storageBucket: "w-chat-74ec1.firebasestorage.app",
-  messagingSenderId: "974879028384",
-  appId: "1:974879028384:web:4d23180119bb49b4cf05c5",
-  measurementId: "G-JMFLJ3VS0H"
+  apiKey: window.FIREBASE_API_KEY || null,
+  authDomain: window.FIREBASE_AUTH_DOMAIN || null,
+  projectId: window.FIREBASE_PROJECT_ID || null,
+  storageBucket: window.FIREBASE_STORAGE_BUCKET || null,
+  messagingSenderId: window.FIREBASE_MESSAGING_SENDER_ID || null,
+  appId: window.FIREBASE_APP_ID || null,
+  measurementId: window.FIREBASE_MEASUREMENT_ID || null
 };
 
 // Initialize Firebase - use this if not using ES modules
 let db, storage;
-if (typeof firebase !== 'undefined') {
+if (typeof firebase !== 'undefined' && firebaseConfig.apiKey) {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
   storage = firebase.storage();
+  console.log("Firebase initialized successfully");
+} else {
+  console.warn("Firebase not initialized. Check your configuration.");
 }
 
 // Listen for real-time updates to messages
