@@ -22,40 +22,80 @@ function addMessage(text, isUser, translatedText = '', senderName = null) {
     const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
     const messageDiv = document.createElement('div');
-    messageDiv.className = `message-bubble ${isUser ? 'user-message' : 'other-message'} p-5 w-fit`;
+    messageDiv.className = `message-bubble ${isUser ? 'user-message' : 'other-message'} w-fit`;
+    
+    const messageContent = document.createElement('div');
+    messageContent.className = 'message-content';
     
     if (isUser) {
-        messageDiv.innerHTML = `
-            <div class="flex items-center space-x-3 mb-2 justify-end">
-                <div>
-                    <span class="text-xs text-slate-300 mr-2">${timeString}</span>
-                    <span class="font-medium">You</span>
-                </div>
-                <div class="w-8 h-8 rounded-full user-avatar flex items-center justify-center text-xs">ME</div>
+        // Create message header with avatar and time
+        const messageHeader = document.createElement('div');
+        messageHeader.className = 'message-header';
+        messageHeader.innerHTML = `
+            <div class="sender-info">
+                <div class="user-avatar">ME</div>
+                <div class="sender-name">You</div>
             </div>
-            <p class="leading-relaxed">${text}</p>
-            <div class="translated-message hidden">
-                ${translatedText || ''}
-            </div>
+            <span class="message-time">${timeString}</span>
         `;
+        
+        // Create message text
+        const messageText = document.createElement('p');
+        messageText.className = 'message-text';
+        messageText.textContent = text;
+        
+        // Create translated message container (initially hidden)
+        const translatedContainer = document.createElement('div');
+        translatedContainer.className = 'translated-message hidden';
+        if (translatedText) {
+            translatedContainer.innerHTML = `
+                <span class="translated-label">Translated</span>
+                <p>${translatedText}</p>
+            `;
+        }
+        
+        // Append all elements
+        messageContent.appendChild(messageHeader);
+        messageContent.appendChild(messageText);
+        messageContent.appendChild(translatedContainer);
+        messageDiv.appendChild(messageContent);
     } else {
         // Make sure we have valid sender information
         const displayName = senderName || 'Other User';
         const initials = getInitials(displayName);
         
-        messageDiv.innerHTML = `
-            <div class="flex items-center space-x-3 mb-2">
-                <div class="w-8 h-8 rounded-full other-avatar flex items-center justify-center text-xs">${initials}</div>
-                <div>
-                    <span class="font-medium">${displayName}</span>
-                    <span class="text-xs text-slate-300 ml-2">${timeString}</span>
-                </div>
+        // Create message header with avatar and time
+        const messageHeader = document.createElement('div');
+        messageHeader.className = 'message-header';
+        messageHeader.innerHTML = `
+            <div class="sender-info">
+                <div class="other-avatar">${initials}</div>
+                <div class="sender-name">${displayName}</div>
             </div>
-            <p class="leading-relaxed">${text}</p>
-            <div class="translated-message ${window.translationModule.selectedLanguage ? '' : 'hidden'}">
-                ${translatedText || ''}
-            </div>
+            <span class="message-time">${timeString}</span>
         `;
+        
+        // Create message text
+        const messageText = document.createElement('p');
+        messageText.className = 'message-text';
+        messageText.textContent = text;
+        messageText.setAttribute('data-original', text);
+        
+        // Create translated message container
+        const translatedContainer = document.createElement('div');
+        translatedContainer.className = `translated-message ${window.translationModule.selectedLanguage ? '' : 'hidden'}`;
+        if (translatedText) {
+            translatedContainer.innerHTML = `
+                <span class="translated-label">Original</span>
+                <p>${translatedText}</p>
+            `;
+        }
+        
+        // Append all elements
+        messageContent.appendChild(messageHeader);
+        messageContent.appendChild(messageText);
+        messageContent.appendChild(translatedContainer);
+        messageDiv.appendChild(messageContent);
     }
     
     // Insert before typing indicator

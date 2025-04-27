@@ -15,17 +15,17 @@
         <!-- Header -->
         <header class="app-header p-4 rounded-b-2xl shadow-lg flex items-center justify-between mb-2">
             <div class="flex items-center space-x-3">
-                <div class="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg">
+                <div class="app-logo w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg">
                     <i class="fas fa-globe text-xl"></i>
                 </div>
                 <div>
-                    <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-blue-600">GlobalTalk</h1>
+                    <h1 class="app-title text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-blue-600">GlobalTalk</h1>
                     <p class="text-xs text-slate-400">Connected to translation service</p>
                 </div>
             </div>
             
-            <div class="flex items-center space-x-4">
-                <div id="connection-status" class="px-3 py-1 rounded-full bg-yellow-600 text-xs mr-2">
+            <div class="header-controls flex items-center space-x-4">
+                <div id="connection-status" class="connection-badge px-3 py-1 rounded-full bg-yellow-600 text-xs mr-2">
                     <span>Connecting...</span>
                 </div>
                 <div class="relative group">
@@ -77,46 +77,55 @@
                 <p class="text-slate-300 max-w-md mx-auto leading-relaxed">Start chatting with people around the world. Use the translate button to convert messages to your preferred language.</p>
             </div>
             
-            <!-- Sample messages -->
-            <div class="message-bubble other-message p-5 w-fit">
-                <div class="flex items-center space-x-3 mb-2">
-                    <div class="w-8 h-8 rounded-full other-avatar flex items-center justify-center text-xs">JD</div>
-                    <div>
-                        <span class="font-medium">John Doe</span>
-                        <span class="text-xs text-slate-300 ml-2">10:30 AM</span>
+            <!-- Sample messages with updated premium design -->
+            <div class="message-bubble other-message w-fit">
+                <div class="message-content">
+                    <div class="message-header">
+                        <div class="sender-info">
+                            <div class="other-avatar">JD</div>
+                            <div class="sender-name">John Doe</div>
+                        </div>
+                        <span class="message-time">10:30 AM</span>
                     </div>
-                </div>
-                <p class="leading-relaxed">Hello there! How are you doing today?</p>
-                <div class="translated-message hidden">
-                    ¡Hola! ¿Cómo estás hoy?
+                    <p class="message-text">Hello there! How are you doing today?</p>
+                    <div class="translated-message hidden">
+                        <span class="translated-label">Original</span>
+                        <p>¡Hola! ¿Cómo estás hoy?</p>
+                    </div>
                 </div>
             </div>
             
-            <div class="message-bubble user-message p-5 w-fit">
-                <div class="flex items-center space-x-3 mb-2 justify-end">
-                    <div>
-                        <span class="text-xs text-slate-300 mr-2">10:32 AM</span>
-                        <span class="font-medium">You</span>
+            <div class="message-bubble user-message w-fit">
+                <div class="message-content">
+                    <div class="message-header">
+                        <div class="sender-info">
+                            <div class="user-avatar">ME</div>
+                            <div class="sender-name">You</div>
+                        </div>
+                        <span class="message-time">10:32 AM</span>
                     </div>
-                    <div class="w-8 h-8 rounded-full user-avatar flex items-center justify-center text-xs">ME</div>
-                </div>
-                <p class="leading-relaxed">I'm doing great! Just working on this new chat app.</p>
-                <div class="translated-message hidden">
-                    ¡Estoy genial! Solo estoy trabajando en esta nueva aplicación de chat.
+                    <p class="message-text">I'm doing great! Just working on this new chat app.</p>
+                    <div class="translated-message hidden">
+                        <span class="translated-label">Translated</span>
+                        <p>¡Estoy genial! Solo estoy trabajando en esta nueva aplicación de chat.</p>
+                    </div>
                 </div>
             </div>
             
-            <div class="message-bubble other-message p-5 w-fit">
-                <div class="flex items-center space-x-3 mb-2">
-                    <div class="w-8 h-8 rounded-full other-avatar flex items-center justify-center text-xs">JD</div>
-                    <div>
-                        <span class="font-medium">John Doe</span>
-                        <span class="text-xs text-slate-300 ml-2">10:33 AM</span>
+            <div class="message-bubble other-message w-fit">
+                <div class="message-content">
+                    <div class="message-header">
+                        <div class="sender-info">
+                            <div class="other-avatar">JD</div>
+                            <div class="sender-name">John Doe</div>
+                        </div>
+                        <span class="message-time">10:33 AM</span>
                     </div>
-                </div>
-                <p class="leading-relaxed">That sounds interesting! What makes it special?</p>
-                <div class="translated-message hidden">
-                    ¡Eso suena interesante! ¿Qué lo hace especial?
+                    <p class="message-text">That sounds interesting! What makes it special?</p>
+                    <div class="translated-message hidden">
+                        <span class="translated-label">Original</span>
+                        <p>¡Eso suena interesante! ¿Qué lo hace especial?</p>
+                    </div>
                 </div>
             </div>
             

@@ -21,39 +21,43 @@ function createFileShareMessage(fileMetadata, isUser, senderName = null) {
     const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
     const messageDiv = document.createElement('div');
-    messageDiv.className = `message-bubble ${isUser ? 'user-message' : 'other-message'} p-5 w-fit`;
+    messageDiv.className = `message-bubble ${isUser ? 'user-message' : 'other-message'} w-fit`;
+    
+    const messageContent = document.createElement('div');
+    messageContent.className = 'message-content';
     
     // Create message header
+    const messageHeader = document.createElement('div');
+    messageHeader.className = 'message-header';
+    
     if (isUser) {
-        messageDiv.innerHTML = `
-            <div class="flex items-center space-x-3 mb-2 justify-end">
-                <div>
-                    <span class="text-xs text-slate-300 mr-2">${timeString}</span>
-                    <span class="font-medium">You</span>
-                </div>
-                <div class="w-8 h-8 rounded-full user-avatar flex items-center justify-center text-xs">ME</div>
+        messageHeader.innerHTML = `
+            <div class="sender-info">
+                <div class="user-avatar">ME</div>
+                <div class="sender-name">You</div>
             </div>
+            <span class="message-time">${timeString}</span>
         `;
     } else {
         const initials = senderName ? getInitials(senderName) : 'OT';
-        messageDiv.innerHTML = `
-            <div class="flex items-center space-x-3 mb-2">
-                <div class="w-8 h-8 rounded-full other-avatar flex items-center justify-center text-xs">${initials}</div>
-                <div>
-                    <span class="font-medium">${senderName || 'Other User'}</span>
-                    <span class="text-xs text-slate-300 ml-2">${timeString}</span>
-                </div>
+        messageHeader.innerHTML = `
+            <div class="sender-info">
+                <div class="other-avatar">${initials}</div>
+                <div class="sender-name">${senderName || 'Other User'}</div>
             </div>
+            <span class="message-time">${timeString}</span>
         `;
     }
     
+    messageContent.appendChild(messageHeader);
+    
     // Add file attachments
     const filesContainer = document.createElement('div');
-    filesContainer.className = 'files-container space-y-3';
+    filesContainer.className = 'files-container';
     
     fileMetadata.forEach(file => {
         const fileItem = document.createElement('div');
-        fileItem.className = 'file-item flex flex-col p-2 bg-slate-800 bg-opacity-50 rounded-lg';
+        fileItem.className = 'file-item flex flex-col p-3 mb-2 bg-opacity-50 rounded-lg';
         
         // Choose icon based on file type
         let fileIcon = 'fa-file';
@@ -71,10 +75,10 @@ function createFileShareMessage(fileMetadata, isUser, senderName = null) {
             // If we have a URL from the server, show the image
             if (file.url) {
                 const imgContainer = document.createElement('div');
-                imgContainer.className = 'mb-2';
+                imgContainer.className = 'mb-3';
                 
                 const img = document.createElement('img');
-                img.className = 'max-h-64 rounded object-contain mx-auto';
+                img.className = 'max-h-64 rounded-xl object-contain mx-auto shadow-lg';
                 img.src = file.url || file.fullUrl;
                 img.alt = file.name;
                 
@@ -109,7 +113,9 @@ function createFileShareMessage(fileMetadata, isUser, senderName = null) {
         fileInfoRow.className = 'flex items-center';
         
         fileInfoRow.innerHTML = `
-            <i class="fas ${fileIcon} text-blue-400 mr-3"></i>
+            <div class="w-10 h-10 rounded-xl bg-blue-500 bg-opacity-20 flex items-center justify-center mr-3">
+                <i class="fas ${fileIcon} text-blue-400"></i>
+            </div>
             <div class="flex-grow overflow-hidden">
                 <div class="text-sm font-medium text-white truncate">${file.name}</div>
                 <div class="text-xs text-slate-400">${formatFileSize(file.size || 0)}</div>
@@ -122,8 +128,8 @@ function createFileShareMessage(fileMetadata, isUser, senderName = null) {
         if (file.url) {
             const downloadLink = document.createElement('a');
             downloadLink.href = file.url || file.fullUrl;
-            downloadLink.className = 'bg-blue-500 hover:bg-blue-600 text-white py-1 px-3 mt-2 rounded text-xs flex items-center justify-center';
-            downloadLink.innerHTML = '<i class="fas fa-download mr-1"></i> Download';
+            downloadLink.className = 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white py-2 px-4 mt-3 rounded-xl text-xs flex items-center justify-center shadow-lg transition-all';
+            downloadLink.innerHTML = '<i class="fas fa-download mr-2"></i> Download File';
             downloadLink.target = '_blank';
             downloadLink.rel = 'noopener noreferrer';
             fileItem.appendChild(downloadLink);
@@ -132,7 +138,8 @@ function createFileShareMessage(fileMetadata, isUser, senderName = null) {
         filesContainer.appendChild(fileItem);
     });
     
-    messageDiv.appendChild(filesContainer);
+    messageContent.appendChild(filesContainer);
+    messageDiv.appendChild(messageContent);
     
     // Insert before typing indicator
     window.uiModule.chatContainer.insertBefore(messageDiv, window.uiModule.typingIndicator);
@@ -160,9 +167,9 @@ async function handleFileUpload(files) {
         const formData = new FormData();
         Array.from(files).forEach((file) => {
             // Handle APNG files specifically
-            if (file.name.toLowerCase().endsWith('.apng') || file.name.toLowerCase().endsWith('.png')) {
+            if (file.name.toLowerCase().endswith('.apng') || file.name.toLowerCase().endswith('.png')) {
                 const renamedFile = new File([file], file.name, { 
-                    type: file.name.toLowerCase().endsWith('.apng') ? 'image/apng' : 'image/png' 
+                    type: file.name.toLowerCase().endswith('.apng') ? 'image/apng' : 'image/png' 
                 });
                 formData.append('files', renamedFile);
             } else {

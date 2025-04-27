@@ -5,6 +5,14 @@ body {
     -webkit-tap-highlight-color: transparent;
 }
 
+/* Enhanced header responsiveness */
+.app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+}
+
 /* Small phones (up to 640px) */
 @media (max-width: 640px) {
     .container {
@@ -12,11 +20,6 @@ body {
         height: 100vh !important;
         max-width: 100% !important;
         width: 100% !important;
-    }
-    
-    .app-header {
-        padding: 0.75rem !important;
-        border-radius: 0 0 1rem 1rem !important;
     }
     
     .chat-container {
@@ -42,20 +45,174 @@ body {
         overflow-y: auto;
     }
     
-    /* Adjust header for smaller screens */
-    .app-header h1 {
-        font-size: 1.2rem !important;
+    /* Responsive header for mobile */
+    .app-header {
+        padding: 6px 10px !important;
+        border-radius: 0 0 0.75rem 0.75rem !important;
     }
     
+    /* Logo and app name */
     .app-header .w-12 {
-        width: 2.5rem !important;
-        height: 2.5rem !important;
+        width: 2rem !important;
+        height: 2rem !important;
+        min-width: 2rem !important;
+        font-size: 0.875rem !important;
     }
     
-    /* Increase size of action buttons */
-    #message-form button[type="submit"] {
-        width: 3.5rem !important;
-        height: 3.5rem !important;
+    .app-header h1 {
+        font-size: 0.95rem !important;
+        margin-bottom: -2px !important;
+    }
+    
+    .app-header p {
+        font-size: 0.65rem !important;
+        opacity: 0.7;
+    }
+    
+    /* Header controls */
+    #connection-status {
+        font-size: 0.65rem !important;
+        padding: 2px 8px !important;
+    }
+    
+    .app-header .relative.group button {
+        padding: 4px 10px !important;
+        font-size: 0.75rem !important;
+    }
+    
+    .app-header .space-x-4 {
+        column-gap: 0.5rem !important;
+    }
+    
+    .app-header .w-12.h-12.rounded-full {
+        width: 2rem !important;
+        height: 2rem !important;
+        min-width: 2rem !important;
+    }
+    
+    /* Make translation toggle more compact */
+    #translate-toggle {
+        padding: 4px 10px !important;
+        font-size: 0.75rem !important;
+    }
+    
+    #translate-toggle i {
+        font-size: 0.85rem !important;
+    }
+    
+    /* Settings button */
+    .app-header button.bg-slate-700.hover\:bg-slate-600.w-12.h-12 {
+        width: 2rem !important;
+        height: 2rem !important;
+        min-width: 2rem !important;
+    }
+    
+    /* Language dropdown position */
+    #language-dropdown {
+        width: 240px !important;
+        right: -30px !important;
+        top: 35px !important;
+    }
+    
+    .language-selector {
+        padding: 6px !important;
+        font-size: 0.75rem !important;
+    }
+}
+
+/* Very small phones (under 380px) */
+@media (max-width: 380px) {
+    /* Even more compact header */
+    .app-header {
+        padding: 4px 8px !important;
+    }
+    
+    /* Hide subtitle on very small screens */
+    .app-header p {
+        display: none !important;
+    }
+    
+    /* Smaller logo */
+    .app-header .w-12 {
+        width: 1.75rem !important;
+        height: 1.75rem !important;
+        min-width: 1.75rem !important;
+    }
+    
+    .app-header h1 {
+        font-size: 0.85rem !important;
+    }
+    
+    /* Smallest controls */
+    #connection-status {
+        max-width: 80px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        padding: 2px 6px !important;
+    }
+    
+    #translate-toggle span {
+        max-width: 50px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+    
+    .app-header .space-x-4 {
+        column-gap: 0.3rem !important;
+    }
+    
+    /* More compact language dropdown */
+    #language-dropdown {
+        width: 200px !important;
+        padding: 0.5rem !important;
+    }
+    
+    .language-selector {
+        padding: 4px !important;
+        font-size: 0.7rem !important;
+    }
+}
+
+/* Extra small devices (under 320px) */
+@media (max-width: 320px) {
+    /* Extreme space saving */
+    #translate-toggle span {
+        display: none !important;
+    }
+    
+    #translate-toggle {
+        padding: 4px !important;
+        width: 28px !important;
+        height: 28px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    
+    /* Smallest possible header while keeping functionality */
+    .app-header .w-12 {
+        width: 1.5rem !important;
+        height: 1.5rem !important;
+        min-width: 1.5rem !important;
+    }
+    
+    /* Minimize space between items */
+    .app-header .space-x-3 {
+        column-gap: 0.25rem !important;
+    }
+    
+    #connection-status {
+        max-width: 60px !important;
+        font-size: 0.6rem !important;
+    }
+    
+    /* Settings button */
+    .app-header button.bg-slate-700.hover\:bg-slate-600.w-12.h-12 {
+        width: 1.75rem !important;
+        height: 1.75rem !important;
+        min-width: 1.75rem !important;
     }
 }
 
