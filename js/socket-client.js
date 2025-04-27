@@ -244,6 +244,40 @@ function connectToServer() {
         }
     });
     
+    // Handle file deletion events from server
+    socket.on('file_deleted', (data) => {
+      if (data && data.fileId) {
+        console.log(`File deleted by another user: ${data.fileId}`);
+        
+        // Find and remove file elements with this ID
+        const fileItems = document.querySelectorAll(`.file-item[data-file-id="${data.fileId}"]`);
+        fileItems.forEach(fileItem => {
+          // Animate removal
+          fileItem.style.height = fileItem.offsetHeight + 'px';
+          fileItem.classList.add('file-deleting');
+          
+          setTimeout(() => {
+            fileItem.style.height = '0';
+            fileItem.style.opacity = '0';
+            fileItem.style.margin = '0';
+            fileItem.style.padding = '0';
+            
+            setTimeout(() => {
+              fileItem.remove();
+              
+              // Check if this was the last file in the container
+              const parentContainer = fileItem.closest('.files-container');
+              if (parentContainer && parentContainer.children.length === 0) {
+                // If it was the last file, remove the entire message
+                const messageBubble = parentContainer.closest('.message-bubble');
+                if (messageBubble) messageBubble.remove();
+              }
+            }, 300);
+          }, 100);
+        });
+      }
+    });
+    
     return socket;
 }
 

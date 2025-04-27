@@ -158,6 +158,11 @@ app.post('/upload-multiple', upload.array('files', 10), async (req, res) => {
     console.log(`Processing ${req.files.length} uploaded files`);
     const filesInfo = [];
     
+    // Get base URL for absolute file paths
+    const protocol = req.protocol;
+    const host = req.get('host');
+    const baseUrl = `${protocol}://${host}`;
+    
     // Process each file
     for (const file of req.files) {
       try {
@@ -176,13 +181,14 @@ app.post('/upload-multiple', upload.array('files', 10), async (req, res) => {
         const savedFile = await fileDoc.save();
         console.log(`File ${file.originalname} saved to database with ID: ${savedFile._id}`);
         
-        // Create file info with URL for client
+        // Create file info with absolute URL for client
         filesInfo.push({
           fileId: savedFile._id,
           name: file.originalname,
           mimetype: file.mimetype,
           size: file.size,
-          url: `/uploads/${file.filename}`
+          url: `${baseUrl}/uploads/${file.filename}`,
+          relativeUrl: `/uploads/${file.filename}`
         });
       } catch (fileError) {
         console.error(`Error processing file ${file.originalname}:`, fileError);
@@ -218,7 +224,7 @@ app.post('/upload-multiple', upload.array('files', 10), async (req, res) => {
   }
 });
 
-// API endpoint to delete a file
+// API endpoint to delete a file - Improved with immediate deletion
 app.delete('/file/:fileId', async (req, res) => {
   try {
     const fileId = req.params.fileId;
@@ -229,21 +235,32 @@ app.delete('/file/:fileId', async (req, res) => {
       return res.status(404).json({ error: 'File not found' });
     }
     
-    // Delete the physical file
+    // Delete the physical file immediately
     if (fileDoc.path && fs.existsSync(fileDoc.path)) {
       fs.unlinkSync(fileDoc.path);
+      console.log(`File deleted from filesystem: ${fileDoc.path}`);
     }
     
     // Delete file from database
     await File.findByIdAndDelete(fileId);
+    console.log(`File deleted from database: ${fileId}`);
     
     // Update any messages that reference this file
-    await Message.updateMany(
+    const updateResult = await Message.updateMany(
       { 'files.fileId': fileId },
       { $pull: { files: { fileId: fileId } } }
     );
+    console.log(`Updated ${updateResult.modifiedCount} messages to remove file reference`);
     
-    res.json({ success: true, message: 'File deleted successfully' });
+    res.json({ 
+      success: true, 
+      message: 'File deleted successfully',
+      fileId: fileId
+    });
+    
+    // Broadcast file deletion to all connected clients
+    io.emit('file_deleted', { fileId: fileId });
+    
   } catch (error) {
     console.error('File deletion error:', error);
     res.status(500).json({ error: 'File deletion failed', details: error.message });
@@ -436,15 +453,28 @@ io.on('connection', (socket) => {
     io.emit('chat_message', completeData);
   });
   
-  // Enhanced file sharing with real file URLs and database storage
+  // Enhanced file sharing with absolute URLs
   socket.on('file_shared', async (data) => {
-    // Add the server base URL to any relative URLs
+    // Process file information before broadcasting
     if (data.files) {
+      // Get the server's base URL for this connection
+      const protocol = socket.request.headers['x-forwarded-proto'] || 'http';
+      const host = socket.request.headers.host;
+      const baseUrl = `${protocol}://${host}`;
+      
       data.files.forEach(file => {
-        if (file.url && file.url.startsWith('/uploads/')) {
-          // For absolute URLs in production
-          const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
-          file.fullUrl = `${baseUrl}${file.url}`;
+        // Ensure every file has an absolute URL
+        if (file.relativeUrl) {
+          file.url = `${baseUrl}${file.relativeUrl}`;
+        } else if (file.url && file.url.startsWith('/')) {
+          file.url = `${baseUrl}${file.url}`;
+        }
+        
+        // Keep the original reference too
+        if (!file.relativeUrl && file.url) {
+          if (file.url.includes(baseUrl)) {
+            file.relativeUrl = file.url.replace(baseUrl, '');
+          }
         }
       });
     }
@@ -463,6 +493,8 @@ io.on('connection', (socket) => {
       
       // Add MongoDB _id to the emitted message
       data._id = message._id;
+      
+      console.log(`File share saved and broadcast: ${data.files.length} files from ${data.userName}`);
     } catch (error) {
       console.error('Error saving file share to database:', error);
     }

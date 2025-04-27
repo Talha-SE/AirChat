@@ -77,28 +77,34 @@ function createFileShareMessage(fileMetadata, isUser, senderName = null) {
             
             // If we have a URL from the server, show the image
             if (file.url) {
-                const imgContainer = document.createElement('div');
-                imgContainer.className = 'mb-3 relative';
-                
-                const img = document.createElement('img');
-                img.className = 'max-h-64 rounded-xl object-contain mx-auto shadow-lg';
-                img.src = file.url || file.fullUrl;
-                img.alt = file.name;
-                
-                // Add loading indicator
-                const loadingText = document.createElement('div');
-                loadingText.className = 'text-xs text-center text-slate-400 my-2';
-                loadingText.textContent = 'Loading image...';
-                
-                img.onload = () => loadingText.remove();
-                img.onerror = () => {
-                    loadingText.textContent = 'Failed to load image';
-                    loadingText.classList.add('text-red-400');
-                };
-                
-                imgContainer.appendChild(loadingText);
-                imgContainer.appendChild(img);
-                fileItem.appendChild(imgContainer);
+                // For image files, show a preview
+                if (fileIcon === 'fa-file-image') {
+                    const imgContainer = document.createElement('div');
+                    imgContainer.className = 'mb-3 relative';
+                    
+                    const img = document.createElement('img');
+                    img.className = 'max-h-64 rounded-xl object-contain mx-auto shadow-lg';
+                    
+                    // Always use the complete URL for image sources
+                    img.src = file.url; // This should be an absolute URL
+                    img.alt = file.name;
+                    
+                    // Add loading indicator
+                    const loadingText = document.createElement('div');
+                    loadingText.className = 'text-xs text-center text-slate-400 my-2';
+                    loadingText.textContent = 'Loading image...';
+                    
+                    img.onload = () => loadingText.remove();
+                    img.onerror = () => {
+                        loadingText.textContent = 'Failed to load image';
+                        loadingText.classList.add('text-red-400');
+                        console.error('Image load error:', file.url);
+                    };
+                    
+                    imgContainer.appendChild(loadingText);
+                    imgContainer.appendChild(img);
+                    fileItem.appendChild(imgContainer);
+                }
             }
         } else if (fileType.startsWith('video/')) {
             fileIcon = 'fa-file-video';
@@ -156,11 +162,15 @@ function createFileShareMessage(fileMetadata, isUser, senderName = null) {
         // Add download button if URL is available
         if (file.url) {
             const downloadLink = document.createElement('a');
-            downloadLink.href = file.url || file.fullUrl;
+            downloadLink.href = file.url; // This should be an absolute URL
             downloadLink.className = 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white py-2 px-4 mt-3 rounded-xl text-xs flex items-center justify-center shadow-lg transition-all';
             downloadLink.innerHTML = '<i class="fas fa-download mr-2"></i> Download File';
             downloadLink.target = '_blank';
             downloadLink.rel = 'noopener noreferrer';
+            
+            // Add download attribute for better experience
+            downloadLink.setAttribute('download', file.name);
+            
             fileItem.appendChild(downloadLink);
         }
         
@@ -207,6 +217,9 @@ async function deleteFile(fileId, fileItemElement) {
             throw new Error(errorData.details || `Delete failed: ${response.status}`);
         }
         
+        const result = await response.json();
+        console.log('File deleted successfully:', result);
+        
         // Remove the file item with animation
         fileItemElement.style.height = fileItemElement.offsetHeight + 'px';
         fileItemElement.classList.add('file-deleting');
@@ -221,8 +234,8 @@ async function deleteFile(fileId, fileItemElement) {
                 fileItemElement.remove();
                 
                 // Check if this was the last file in the container
-                const parentContainer = document.querySelector('.files-container');
-                if (parentContainer && !parentContainer.children.length) {
+                const parentContainer = fileItemElement.closest('.files-container');
+                if (parentContainer && parentContainer.children.length === 0) {
                     // If it was the last file, remove the entire message
                     const messageBubble = parentContainer.closest('.message-bubble');
                     if (messageBubble) messageBubble.remove();
