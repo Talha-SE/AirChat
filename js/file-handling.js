@@ -59,23 +59,26 @@ function createFileShareMessage(fileMetadata, isUser, senderName = null) {
         const fileItem = document.createElement('div');
         fileItem.className = 'file-item flex flex-col p-3 mb-2 bg-opacity-50 rounded-lg';
         
+        // Store file ID for potential deletion
+        if (file.fileId) {
+            fileItem.dataset.fileId = file.fileId;
+        }
+        
         // Choose icon based on file type
         let fileIcon = 'fa-file';
         const fileType = file.type || file.mimetype || '';
         const fileName = file.name || '';
+        const fileExtension = fileName.split('.').pop().toLowerCase();
         
+        // Map file types to icons
         if (fileType.startsWith('image/') || 
-            fileName.toLowerCase().endsWith('.png') || 
-            fileName.toLowerCase().endsWith('.jpg') ||
-            fileName.toLowerCase().endsWith('.jpeg') ||
-            fileName.toLowerCase().endsWith('.gif') ||
-            fileName.toLowerCase().endsWith('.apng')) {
+            ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tiff', 'apng', 'avif', 'heic', 'heif'].includes(fileExtension)) {
             fileIcon = 'fa-file-image';
             
             // If we have a URL from the server, show the image
             if (file.url) {
                 const imgContainer = document.createElement('div');
-                imgContainer.className = 'mb-3';
+                imgContainer.className = 'mb-3 relative';
                 
                 const img = document.createElement('img');
                 img.className = 'max-h-64 rounded-xl object-contain mx-auto shadow-lg';
@@ -101,18 +104,26 @@ function createFileShareMessage(fileMetadata, isUser, senderName = null) {
             fileIcon = 'fa-file-video';
         } else if (fileType.startsWith('audio/')) {
             fileIcon = 'fa-file-audio';
-        } else if (fileType.includes('pdf')) {
+        } else if (fileType.includes('pdf') || fileExtension === 'pdf') {
             fileIcon = 'fa-file-pdf';
         } else if (fileType.includes('word') || 
-                  fileName.endsWith('.doc') || 
-                  fileName.endsWith('.docx')) {
+                  ['doc', 'docx'].includes(fileExtension)) {
             fileIcon = 'fa-file-word';
+        } else if (fileType.includes('excel') || 
+                  ['xls', 'xlsx'].includes(fileExtension)) {
+            fileIcon = 'fa-file-excel';
+        } else if (fileType.includes('text') || 
+                  ['txt', 'rtf'].includes(fileExtension)) {
+            fileIcon = 'fa-file-lines';
         }
         
         const fileInfoRow = document.createElement('div');
-        fileInfoRow.className = 'flex items-center';
+        fileInfoRow.className = 'flex items-center justify-between';
         
-        fileInfoRow.innerHTML = `
+        // Left side: file icon and info
+        const fileInfoLeft = document.createElement('div');
+        fileInfoLeft.className = 'flex items-center flex-1';
+        fileInfoLeft.innerHTML = `
             <div class="w-10 h-10 rounded-xl bg-blue-500 bg-opacity-20 flex items-center justify-center mr-3">
                 <i class="fas ${fileIcon} text-blue-400"></i>
             </div>
@@ -121,6 +132,24 @@ function createFileShareMessage(fileMetadata, isUser, senderName = null) {
                 <div class="text-xs text-slate-400">${formatFileSize(file.size || 0)}</div>
             </div>
         `;
+        
+        // Right side: delete button (only for user's files)
+        if (isUser && file.fileId) {
+            const deleteButton = document.createElement('button');
+            deleteButton.className = 'ml-2 p-2 rounded-full bg-slate-700 hover:bg-red-500 text-slate-400 hover:text-white transition-colors';
+            deleteButton.innerHTML = '<i class="fas fa-times"></i>';
+            deleteButton.title = 'Delete file';
+            deleteButton.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                deleteFile(file.fileId, fileItem);
+            };
+            
+            fileInfoRow.appendChild(fileInfoLeft);
+            fileInfoRow.appendChild(deleteButton);
+        } else {
+            fileInfoRow.appendChild(fileInfoLeft);
+        }
         
         fileItem.appendChild(fileInfoRow);
         
@@ -149,11 +178,90 @@ function createFileShareMessage(fileMetadata, isUser, senderName = null) {
 }
 
 /**
- * Upload files to server and handle response
+ * Delete a file from the server
+ * @param {string} fileId - ID of the file to delete
+ * @param {HTMLElement} fileItemElement - Element to remove on success
+ */
+async function deleteFile(fileId, fileItemElement) {
+    // Show confirmation dialog
+    if (!confirm('Are you sure you want to delete this file? This cannot be undone.')) {
+        return;
+    }
+    
+    try {
+        // Add loading state to the element
+        fileItemElement.classList.add('opacity-50');
+        const deleteButton = fileItemElement.querySelector('button');
+        if (deleteButton) {
+            deleteButton.disabled = true;
+            deleteButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
+        
+        // Send delete request to the server
+        const response = await fetch(`/file/${fileId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.details || `Delete failed: ${response.status}`);
+        }
+        
+        // Remove the file item with animation
+        fileItemElement.style.height = fileItemElement.offsetHeight + 'px';
+        fileItemElement.classList.add('file-deleting');
+        
+        setTimeout(() => {
+            fileItemElement.style.height = '0';
+            fileItemElement.style.opacity = '0';
+            fileItemElement.style.margin = '0';
+            fileItemElement.style.padding = '0';
+            
+            setTimeout(() => {
+                fileItemElement.remove();
+                
+                // Check if this was the last file in the container
+                const parentContainer = document.querySelector('.files-container');
+                if (parentContainer && !parentContainer.children.length) {
+                    // If it was the last file, remove the entire message
+                    const messageBubble = parentContainer.closest('.message-bubble');
+                    if (messageBubble) messageBubble.remove();
+                }
+            }, 300);
+        }, 100);
+        
+    } catch (error) {
+        console.error('File deletion error:', error);
+        
+        // Reset the element's appearance
+        fileItemElement.classList.remove('opacity-50');
+        const deleteButton = fileItemElement.querySelector('button');
+        if (deleteButton) {
+            deleteButton.disabled = false;
+            deleteButton.innerHTML = '<i class="fas fa-times"></i>';
+        }
+        
+        // Show error notification
+        const errorNotification = document.createElement('div');
+        errorNotification.className = 'bg-red-500 text-white text-xs p-2 rounded mt-2';
+        errorNotification.textContent = `Failed to delete: ${error.message}`;
+        fileItemElement.appendChild(errorNotification);
+        
+        // Auto-remove the error after 5 seconds
+        setTimeout(() => {
+            errorNotification.remove();
+        }, 5000);
+    }
+}
+
+/**
+ * Upload files to server with progress tracking
  * @param {Array} files - Array of files to upload
  */
-async function handleFileUpload(files) {
+function handleFileUpload(files) {
     if (files.length === 0) return;
+    
+    console.log(`Attempting to upload ${files.length} file(s):`, files);
     
     // Show upload in progress
     const uploadingMsg = document.createElement('div');
@@ -162,48 +270,100 @@ async function handleFileUpload(files) {
     window.uiModule.chatContainer.appendChild(uploadingMsg);
     window.uiModule.chatContainer.scrollTop = window.uiModule.chatContainer.scrollHeight;
     
-    try {
-        // Create form data for the file upload
-        const formData = new FormData();
-        Array.from(files).forEach((file) => {
-            // Handle APNG files specifically
-            if (file.name.toLowerCase().endswith('.apng') || file.name.toLowerCase().endswith('.png')) {
-                const renamedFile = new File([file], file.name, { 
-                    type: file.name.toLowerCase().endswith('.apng') ? 'image/apng' : 'image/png' 
-                });
-                formData.append('files', renamedFile);
-            } else {
-                formData.append('files', file);
-            }
-        });
+    // Create form data for the file upload
+    const formData = new FormData();
+    Array.from(files).forEach((file) => {
+        // Log file info for debugging
+        console.log(`Processing file: ${file.name}, type: ${file.type}, size: ${file.size}`);
         
-        // Upload files to server
-        const response = await fetch('/upload-multiple', {
-            method: 'POST',
-            body: formData
-        });
+        // Handle special file formats
+        let fileToUpload = file;
         
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.details || `Upload failed: ${response.status}`);
+        // Handle APNG files specifically - FIX: endswith -> endsWith (case matters)
+        if (file.name.toLowerCase().endsWith('.apng')) {
+            console.log("Handling APNG file with special MIME type");
+            fileToUpload = new File([file], file.name, { type: 'image/apng' });
+        } else if (file.name.toLowerCase().endsWith('.png')) {
+            console.log("Handling PNG file");
+            fileToUpload = new File([file], file.name, { type: 'image/png' });
         }
         
-        const result = await response.json();
+        formData.append('files', fileToUpload);
+    });
+    
+    // Create XMLHttpRequest for progress tracking
+    const xhr = new XMLHttpRequest();
+    
+    // Track upload progress
+    xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+            const percent = (event.loaded / event.total) * 100;
+            uploadingMsg.textContent = `Uploading ${files.length} file(s)... ${Math.round(percent)}%`;
+        }
+    });
+    
+    // Handle completion
+    xhr.addEventListener('load', () => {
+        console.log("Upload completed. Status:", xhr.status, "Response:", xhr.responseText);
         
-        // Remove uploading message
-        window.uiModule.chatContainer.removeChild(uploadingMsg);
-        
-        // Create message with file attachments including URLs
-        const userMessageElement = createFileShareMessage(result.files, true);
-        
-        // Broadcast file metadata to other users using socket
-        window.socketModule.emitFileShared(result.files);
-        
-    } catch (error) {
-        console.error('File upload error:', error);
-        uploadingMsg.textContent = `Upload failed: ${error.message}`;
+        if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+                const response = JSON.parse(xhr.responseText);
+                console.log("Parsed response:", response);
+                
+                // Remove uploading message
+                uploadingMsg.remove();
+                
+                // Create message with file attachments including URLs
+                if (response.files && response.files.length > 0) {
+                    createFileShareMessage(response.files, true);
+                    
+                    // Broadcast file metadata to other users using socket
+                    window.socketModule.emitFileShared(response.files);
+                } else {
+                    console.error("No files in response or empty array");
+                    uploadingMsg.textContent = 'Upload completed but no files were processed';
+                    uploadingMsg.classList.replace('text-blue-400', 'text-yellow-400');
+                }
+            } catch (parseError) {
+                console.error('Error parsing upload response:', parseError);
+                uploadingMsg.textContent = 'Upload failed: Invalid server response';
+                uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
+            }
+        } else {
+            try {
+                const errorData = JSON.parse(xhr.responseText);
+                console.error("Upload error response:", errorData);
+                uploadingMsg.textContent = `Upload failed: ${errorData.error || errorData.details || 'Server error'}`;
+                uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
+            } catch (e) {
+                console.error("Error parsing error response:", e);
+                uploadingMsg.textContent = `Upload failed (${xhr.status})`;
+                uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
+            }
+        }
+    });
+    
+    // Handle errors
+    xhr.addEventListener('error', (e) => {
+        console.error("Network error during upload:", e);
+        uploadingMsg.textContent = 'Upload failed: Network error occurred';
         uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
-    }
+    });
+    
+    xhr.addEventListener('abort', () => {
+        console.log("Upload aborted");
+        uploadingMsg.textContent = 'Upload cancelled';
+        uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
+    });
+    
+    // Send the request
+    console.log("Sending upload request to /upload-multiple");
+    xhr.open('POST', '/upload-multiple');
+    xhr.send(formData);
+    
+    // Reset file input to allow selecting the same file again
+    fileInput.value = '';
 }
 
 // Set up file input event listeners
@@ -213,16 +373,51 @@ fileButton.addEventListener('click', function() {
 
 fileInput.addEventListener('change', function() {
     if (this.files.length > 0) {
+        console.log(`Selected ${this.files.length} files for upload`);
         selectedFiles = Array.from(this.files);
-        // Send files immediately
+        // Send files
         handleFileUpload(selectedFiles);
-        // Reset input to allow selecting the same file again
-        this.value = '';
     }
+});
+
+// Add drag and drop support
+window.addEventListener('DOMContentLoaded', () => {
+    const dropArea = document.querySelector('.chat-container');
+    
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropArea.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+    });
+    
+    // Highlight drop area
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropArea.addEventListener(eventName, () => {
+            dropArea.classList.add('file-drag-active');
+        });
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropArea.addEventListener(eventName, () => {
+            dropArea.classList.remove('file-drag-active');
+        });
+    });
+    
+    // Handle dropped files
+    dropArea.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        
+        if (files.length > 0) {
+            handleFileUpload(files);
+        }
+    });
 });
 
 // Export objects and functions for use in other modules
 window.fileModule = {
     createFileShareMessage,
-    handleFileUpload
+    handleFileUpload,
+    deleteFile
 };

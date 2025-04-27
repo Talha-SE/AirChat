@@ -18,7 +18,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: "*", // Allow all origins
-    methods: ["GET", "POST"]
+    methods: ["GET", "POST", "DELETE"]
   }
 });
 
@@ -29,6 +29,21 @@ mongoose.connect(process.env.MONGODB_URI, {
 })
 .then(() => console.log('MongoDB connected'))
 .catch(err => console.error('MongoDB connection error:', err));
+
+// Define File Schema
+const fileSchema = new mongoose.Schema({
+  originalName: String,
+  fileName: String,
+  mimetype: String,
+  size: Number,
+  path: String,
+  uploadDate: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+const File = mongoose.model('File', fileSchema);
 
 // Define Message Schema
 const messageSchema = new mongoose.Schema({
@@ -41,6 +56,7 @@ const messageSchema = new mongoose.Schema({
     default: Date.now
   },
   files: [{
+    fileId: String,
     name: String,
     mimetype: String,
     size: Number,
@@ -60,7 +76,7 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configure multer for file uploads
+// Configure multer for file uploads - store directly in filesystem
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadsDir);
@@ -73,10 +89,29 @@ const storage = multer.diskStorage({
   }
 });
 
-// File filter to validate types if needed
+// File filter to validate types
 const fileFilter = (req, file, cb) => {
-  // Accept all file types
-  cb(null, true);
+  // Check for allowed file types
+  const allowedMimeTypes = [
+    // All image formats
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml', 
+    'image/bmp', 'image/tiff', 'image/apng', 'image/avif', 'image/heic', 'image/heif',
+    
+    // Document formats
+    'application/msword', 
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+    'application/pdf',
+    'text/plain',
+    'application/rtf'
+  ];
+
+  if (allowedMimeTypes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('File type not allowed'), false);
+  }
 };
 
 // Configure upload settings with 20MB limit
@@ -110,23 +145,72 @@ app.get('/api/message-history', async (req, res) => {
   }
 });
 
-// File upload endpoint
-app.post('/upload', upload.single('file'), (req, res) => {
+// Multiple file upload endpoint
+app.post('/upload-multiple', upload.array('files', 10), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+    console.log('Upload request received');
+    
+    if (!req.files || req.files.length === 0) {
+      console.log('No files in request');
+      return res.status(400).json({ error: 'No files uploaded' });
     }
     
-    // Return the file information including the URL
-    const fileUrl = `/uploads/${req.file.filename}`;
+    console.log(`Processing ${req.files.length} uploaded files`);
+    const filesInfo = [];
+    
+    // Process each file
+    for (const file of req.files) {
+      try {
+        console.log(`Processing file: ${file.originalname}, type: ${file.mimetype}, size: ${file.size}`);
+        
+        // Save file metadata to MongoDB
+        const fileDoc = new File({
+          originalName: file.originalname,
+          fileName: file.filename,
+          mimetype: file.mimetype,
+          size: file.size,
+          path: file.path
+        });
+        
+        // Save the file document
+        const savedFile = await fileDoc.save();
+        console.log(`File ${file.originalname} saved to database with ID: ${savedFile._id}`);
+        
+        // Create file info with URL for client
+        filesInfo.push({
+          fileId: savedFile._id,
+          name: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size,
+          url: `/uploads/${file.filename}`
+        });
+      } catch (fileError) {
+        console.error(`Error processing file ${file.originalname}:`, fileError);
+        
+        // Try to delete the file if saving to DB failed
+        try {
+          fs.unlinkSync(file.path);
+          console.log(`Deleted failed upload file: ${file.path}`);
+        } catch (unlinkError) {
+          console.error('Failed to delete file after DB error:', unlinkError);
+        }
+        
+        // Add error info
+        filesInfo.push({
+          name: file.originalname,
+          error: 'Failed to process file',
+          details: fileError.message
+        });
+      }
+    }
+    
+    // Return information about all uploaded files
+    const successfulFiles = filesInfo.filter(file => !file.error);
+    console.log(`Completed processing ${successfulFiles.length} files successfully`);
+    
     res.json({ 
       success: true,
-      file: {
-        name: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size,
-        url: fileUrl
-      }
+      files: successfulFiles
     });
   } catch (error) {
     console.error('Upload error:', error);
@@ -134,28 +218,35 @@ app.post('/upload', upload.single('file'), (req, res) => {
   }
 });
 
-// Multiple file upload endpoint
-app.post('/upload-multiple', upload.array('files', 10), (req, res) => {
+// API endpoint to delete a file
+app.delete('/file/:fileId', async (req, res) => {
   try {
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ error: 'No files uploaded' });
+    const fileId = req.params.fileId;
+    
+    // Find file in database
+    const fileDoc = await File.findById(fileId);
+    if (!fileDoc) {
+      return res.status(404).json({ error: 'File not found' });
     }
     
-    // Return information about all uploaded files
-    const filesInfo = req.files.map(file => ({
-      name: file.originalname,
-      mimetype: file.mimetype,
-      size: file.size,
-      url: `/uploads/${file.filename}`
-    }));
+    // Delete the physical file
+    if (fileDoc.path && fs.existsSync(fileDoc.path)) {
+      fs.unlinkSync(fileDoc.path);
+    }
     
-    res.json({ 
-      success: true,
-      files: filesInfo
-    });
+    // Delete file from database
+    await File.findByIdAndDelete(fileId);
+    
+    // Update any messages that reference this file
+    await Message.updateMany(
+      { 'files.fileId': fileId },
+      { $pull: { files: { fileId: fileId } } }
+    );
+    
+    res.json({ success: true, message: 'File deleted successfully' });
   } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ error: 'File upload failed', details: error.message });
+    console.error('File deletion error:', error);
+    res.status(500).json({ error: 'File deletion failed', details: error.message });
   }
 });
 
@@ -171,10 +262,6 @@ app.use((err, req, res, next) => {
   }
   next(err);
 });
-
-// Static files
-app.use(express.static(path.join(__dirname)));
-app.use(express.json());
 
 // Serve index.html
 app.get('/', (req, res) => {

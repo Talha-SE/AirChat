@@ -529,3 +529,112 @@ body {
         scroll-behavior: smooth;
     }
 }
+
+/* File upload and management styles */
+.upload-progress {
+    transition: all 0.3s ease;
+    overflow: hidden;
+}
+
+.upload-cancelled, .file-deleting {
+    transition: all 0.3s ease;
+    overflow: hidden;
+}
+
+.progress-bar {
+    transition: width 0.2s ease;
+}
+
+.file-item {
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.file-drag-active {
+    border: 2px dashed #3b82f6;
+    background-color: rgba(59, 130, 246, 0.1);
+    position: relative;
+}
+
+.file-drag-active::after {
+    content: 'Drop files to upload';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(15, 23, 42, 0.8);
+    color: white;
+    padding: 16px 24px;
+    border-radius: 12px;
+    font-size: 1.2rem;
+    z-index: 10;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+.cancel-upload {
+    min-height: 24px;
+    min-width: 24px;
+}
+
+.file-upload-info {
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    background-color: #1e293b;
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+    width: 300px;
+    max-width: 80vw;
+    transition: all 0.3s ease;
+}
+
+.file-upload-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 8px;
+}
+
+/* Document preview styles */
+.doc-preview {
+    background-color: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 8px;
+    padding: 10px;
+    margin-top: 8px;
+    font-family: 'Courier New', monospace;
+    color: #e2e8f0;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    max-height: 150px;
+    overflow-y: auto;
+    position: relative;
+}
+
+.doc-preview::before {
+    content: 'Document Preview';
+    position: absolute;
+    top: -8px;
+    left: 10px;
+    background-color: #1e293b;
+    padding: 0 5px;
+    font-size: 0.7rem;
+    color: #60a5fa;
+}
+
+/* Mobile-specific file upload styles */
+@media (max-width: 640px) {
+    .upload-progress {
+        margin-left: 5px;
+        margin-right: 5px;
+        padding: 10px;
+    }
+    
+    .file-item {
+        padding: 10px !important;
+    }
+}
