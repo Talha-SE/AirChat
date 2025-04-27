@@ -3,10 +3,12 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const cors = require('cors');
-const multer = require('multer');
-const fs = require('fs');
-const mongoose = require('mongoose');
+const { v4: uuidv4 } = require('uuid');
 const dotenv = require('dotenv');
+
+// Import Firebase and Cloudinary configurations
+const { admin, db } = require('./firebase-admin');
+const { cloudinary, upload } = require('./cloudinary-config');
 
 // Load environment variables
 dotenv.config();
@@ -17,125 +19,32 @@ const server = http.createServer(app);
 // Configure CORS for Socket.io to accept connections from anywhere
 const io = new Server(server, {
   cors: {
-    origin: "*", // Allow all origins
+    origin: "*",
     methods: ["GET", "POST", "DELETE"]
   }
 });
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => console.log('MongoDB connected'))
-.catch(err => console.error('MongoDB connection error:', err));
-
-// Define File Schema
-const fileSchema = new mongoose.Schema({
-  originalName: String,
-  fileName: String,
-  mimetype: String,
-  size: Number,
-  path: String,
-  uploadDate: {
-    type: Date,
-    default: Date.now
-  }
-});
-
-const File = mongoose.model('File', fileSchema);
-
-// Define Message Schema
-const messageSchema = new mongoose.Schema({
-  userId: String,
-  userName: String,
-  message: String,
-  sourceLang: String,
-  timestamp: {
-    type: Date,
-    default: Date.now
-  },
-  files: [{
-    fileId: String,
-    name: String,
-    mimetype: String,
-    size: Number,
-    url: String
-  }],
-  isFileShare: {
-    type: Boolean,
-    default: false
-  }
-});
-
-const Message = mongoose.model('Message', messageSchema);
-
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-// Configure multer for file uploads - store directly in filesystem
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadsDir);
-  },
-  filename: function (req, file, cb) {
-    // Create unique filename by adding timestamp
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
-  }
-});
-
-// File filter to validate types
-const fileFilter = (req, file, cb) => {
-  // Check for allowed file types
-  const allowedMimeTypes = [
-    // All image formats
-    'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml', 
-    'image/bmp', 'image/tiff', 'image/apng', 'image/avif', 'image/heic', 'image/heif',
-    
-    // Document formats
-    'application/msword', 
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
-    'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-    'application/pdf',
-    'text/plain',
-    'application/rtf'
-  ];
-
-  if (allowedMimeTypes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error('File type not allowed'), false);
-  }
-};
-
-// Configure upload settings with 20MB limit
-const upload = multer({ 
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: { 
-    fileSize: 20 * 1024 * 1024 // 20MB in bytes
-  }
-});
-
-// Serve static files including uploads directory
+// Serve static files
 app.use(express.static(path.join(__dirname)));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.json());
 
 // API endpoint to get chat history
 app.get('/api/message-history', async (req, res) => {
   try {
-    // Get last 50 messages, sorted by timestamp
-    const messages = await Message.find()
-      .sort({ timestamp: -1 })
+    // Get last 50 messages from Firestore
+    const messagesSnapshot = await db.collection('messages')
+      .orderBy('timestamp', 'desc')
       .limit(50)
-      .lean();
+      .get();
+    
+    const messages = [];
+    messagesSnapshot.forEach(doc => {
+      messages.push({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: doc.data().timestamp?.toDate() || new Date()
+      });
+    });
     
     // Send messages in chronological order (oldest first)
     res.json(messages.reverse());
@@ -145,7 +54,7 @@ app.get('/api/message-history', async (req, res) => {
   }
 });
 
-// Multiple file upload endpoint
+// Upload files to Cloudinary
 app.post('/upload-multiple', upload.array('files', 10), async (req, res) => {
   try {
     console.log('Upload request received');
@@ -155,51 +64,48 @@ app.post('/upload-multiple', upload.array('files', 10), async (req, res) => {
       return res.status(400).json({ error: 'No files uploaded' });
     }
     
-    console.log(`Processing ${req.files.length} uploaded files`);
+    const userId = req.body.userId || 'anonymous';
+    console.log(`Processing ${req.files.length} uploaded files for user ${userId}`);
+    
     const filesInfo = [];
     
-    // Get base URL for absolute file paths
-    const protocol = req.protocol;
-    const host = req.get('host');
-    const baseUrl = `${protocol}://${host}`;
-    
-    // Process each file
+    // Process each file (already uploaded to Cloudinary by multer middleware)
     for (const file of req.files) {
       try {
         console.log(`Processing file: ${file.originalname}, type: ${file.mimetype}, size: ${file.size}`);
         
-        // Save file metadata to MongoDB
-        const fileDoc = new File({
-          originalName: file.originalname,
-          fileName: file.filename,
-          mimetype: file.mimetype,
-          size: file.size,
-          path: file.path
-        });
+        // Generate a unique ID for the file
+        const fileId = uuidv4();
         
-        // Save the file document
-        const savedFile = await fileDoc.save();
-        console.log(`File ${file.originalname} saved to database with ID: ${savedFile._id}`);
+        // Each file uploaded with Cloudinary multer storage has these properties
+        const publicUrl = file.path; // Cloudinary URL
+        const secureUrl = file.secure_url || file.path.replace('http://', 'https://');
+        const cloudinaryId = file.filename; // Cloudinary public ID
         
-        // Create file info with absolute URL for client
-        filesInfo.push({
-          fileId: savedFile._id,
+        // Save file metadata to Firestore
+        const fileRef = await db.collection('files').doc(fileId).set({
+          fileId: fileId,
           name: file.originalname,
           mimetype: file.mimetype,
           size: file.size,
-          url: `${baseUrl}/uploads/${file.filename}`,
-          relativeUrl: `/uploads/${file.filename}`
+          url: secureUrl,
+          cloudinaryId: cloudinaryId,
+          userId: userId,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        
+        console.log(`File ${file.originalname} uploaded to Cloudinary: ${secureUrl}`);
+        
+        // Add file info for response
+        filesInfo.push({
+          fileId: fileId,
+          name: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size,
+          url: secureUrl
         });
       } catch (fileError) {
         console.error(`Error processing file ${file.originalname}:`, fileError);
-        
-        // Try to delete the file if saving to DB failed
-        try {
-          fs.unlinkSync(file.path);
-          console.log(`Deleted failed upload file: ${file.path}`);
-        } catch (unlinkError) {
-          console.error('Failed to delete file after DB error:', unlinkError);
-        }
         
         // Add error info
         filesInfo.push({
@@ -224,33 +130,60 @@ app.post('/upload-multiple', upload.array('files', 10), async (req, res) => {
   }
 });
 
-// API endpoint to delete a file - Improved with immediate deletion
+// API endpoint to delete a file
 app.delete('/file/:fileId', async (req, res) => {
   try {
     const fileId = req.params.fileId;
+    const userId = req.query.userId || req.body.userId;
     
-    // Find file in database
-    const fileDoc = await File.findById(fileId);
-    if (!fileDoc) {
+    // Get file reference from Firestore
+    const fileDoc = await db.collection('files').doc(fileId).get();
+    
+    if (!fileDoc.exists) {
       return res.status(404).json({ error: 'File not found' });
     }
     
-    // Delete the physical file immediately
-    if (fileDoc.path && fs.existsSync(fileDoc.path)) {
-      fs.unlinkSync(fileDoc.path);
-      console.log(`File deleted from filesystem: ${fileDoc.path}`);
+    const fileData = fileDoc.data();
+    
+    // Check if user is the owner (optional)
+    if (fileData.userId !== userId) {
+      return res.status(403).json({ error: 'You do not have permission to delete this file' });
     }
     
-    // Delete file from database
-    await File.findByIdAndDelete(fileId);
-    console.log(`File deleted from database: ${fileId}`);
+    // Delete file from Cloudinary
+    try {
+      // Extract public ID from Cloudinary URL if not stored directly
+      const cloudinaryId = fileData.cloudinaryId || 
+          fileData.url.split('/').pop().split('.')[0];
+          
+      await cloudinary.uploader.destroy(cloudinaryId);
+      console.log(`File deleted from Cloudinary: ${cloudinaryId}`);
+    } catch (cloudinaryError) {
+      console.error('Error deleting from Cloudinary:', cloudinaryError);
+      // Continue with Firestore deletion even if Cloudinary deletion fails
+    }
+    
+    // Delete file metadata from Firestore
+    await db.collection('files').doc(fileId).delete();
+    console.log(`File metadata deleted from Firestore: ${fileId}`);
     
     // Update any messages that reference this file
-    const updateResult = await Message.updateMany(
-      { 'files.fileId': fileId },
-      { $pull: { files: { fileId: fileId } } }
-    );
-    console.log(`Updated ${updateResult.modifiedCount} messages to remove file reference`);
+    const messagesWithFile = await db.collection('messages')
+      .where('files', 'array-contains', { fileId: fileId })
+      .get();
+    
+    // Batch update messages to remove the file reference
+    if (!messagesWithFile.empty) {
+      const batch = db.batch();
+      
+      messagesWithFile.forEach(doc => {
+        const message = doc.data();
+        const updatedFiles = message.files.filter(file => file.fileId !== fileId);
+        batch.update(doc.ref, { files: updatedFiles });
+      });
+      
+      await batch.commit();
+    }
     
     res.json({ 
       success: true, 
@@ -267,118 +200,13 @@ app.delete('/file/:fileId', async (req, res) => {
   }
 });
 
-// Error handler for file size limit
-app.use((err, req, res, next) => {
-  if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ 
-        error: 'File size limit exceeded', 
-        details: 'Maximum file size is 20MB' 
-      });
-    }
-  }
-  next(err);
-});
-
-// Serve index.html
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-// Update the translation endpoint to use DeepL API with improved caching
-const translationCache = new Map(); // Cache to store recent translations
-const CACHE_EXPIRY = 3600000; // Cache expiration time in ms (1 hour)
-
-app.post('/translate', async (req, res) => {
-  try {
-    const { text, targetLang } = req.body;
-    
-    // Create a cache key combining text and target language
-    const cacheKey = `${text.substring(0, 100)}_${targetLang}`;
-    
-    // Check if translation is in cache and not expired
-    if (translationCache.has(cacheKey)) {
-      const cacheEntry = translationCache.get(cacheKey);
-      if (Date.now() - cacheEntry.timestamp < CACHE_EXPIRY) {
-        return res.json({ translation: cacheEntry.translation });
-      }
-    }
-    
-    // DeepL API integration
-    const DEEPL_API_KEY = process.env.DEEPL_API_KEY; // Use API key from environment variables
-    const DEEPL_API_URL = 'https://api-free.deepl.com/v2/translate';
-    
-    // Convert our language codes to DeepL format if needed
-    const deepLLangCode = {
-      'EN': 'EN-US',
-      'ES': 'ES',
-      'FR': 'FR',
-      'DE': 'DE',
-      'IT': 'IT',
-      'JA': 'JA',
-      'KO': 'KO'
-    }[targetLang] || 'EN-US';
-    
-    const response = await fetch(DEEPL_API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `DeepL-Auth-Key ${DEEPL_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        text: [text],
-        target_lang: deepLLangCode
-      })
-    });
-    
-    if (!response.ok) {
-      throw new Error(`DeepL API error: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    const translation = data.translations[0].text;
-    
-    // Store in cache
-    translationCache.set(cacheKey, {
-      translation: translation,
-      timestamp: Date.now()
-    });
-    
-    // Clean up old cache entries occasionally
-    if (Math.random() < 0.1) { // 10% chance to clean up each request
-      const now = Date.now();
-      for (const [key, value] of translationCache.entries()) {
-        if (now - value.timestamp > CACHE_EXPIRY) {
-          translationCache.delete(key);
-        }
-      }
-    }
-    
-    res.json({ translation });
-  } catch (error) {
-    console.error('Translation error:', error);
-    res.status(500).json({ error: 'Translation failed', details: error.message });
-  }
-});
-
-// Track active users
-const activeUsers = new Map(); // userId -> userData
-
-// Random name generator - first and last name combinations
-const firstNames = ['Amber', 'Blake', 'Casey', 'Dana', 'Ellis', 'Fran', 'Glenn', 'Harper', 'Indigo', 'Jordan', 'Kelly', 'Logan', 'Morgan', 'Noel', 'Parker', 'Quinn', 'Riley', 'Sage', 'Taylor', 'Val'];
-const lastNames = ['Sky', 'River', 'Stone', 'Wood', 'Moon', 'Star', 'Cloud', 'Ocean', 'Mountain', 'Meadow', 'Forest', 'Field', 'Valley', 'Garden', 'Lake', 'Dawn', 'Dusk', 'Storm', 'Wind', 'Rain'];
-
-function generateUniqueName() {
-  const first = firstNames[Math.floor(Math.random() * firstNames.length)];
-  const last = lastNames[Math.floor(Math.random() * lastNames.length)];
-  return `${first} ${last}`;
-}
-
-// Improved Socket.io connection handling
+// Socket.io connection handling
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
   
   socket.on('join', async (userData) => {
+    // ...existing user join code...
+    
     // Generate a unique name if not provided or already taken
     if (!userData.userName || userData.userName.startsWith('User_') || activeUsers.has(userData.userName)) {
       userData.userName = generateUniqueName();
@@ -403,12 +231,21 @@ io.on('connection', (socket) => {
     // Send the list of active users to the newly joined user
     socket.emit('active_users', Array.from(activeUsers.values()));
     
-    // Send message history to the newly joined user
+    // Send message history from Firestore
     try {
-      const messages = await Message.find()
-        .sort({ timestamp: -1 })
+      const messagesSnapshot = await db.collection('messages')
+        .orderBy('timestamp', 'desc')
         .limit(50)
-        .lean();
+        .get();
+      
+      const messages = [];
+      messagesSnapshot.forEach(doc => {
+        messages.push({
+          id: doc.id,
+          ...doc.data(),
+          timestamp: doc.data().timestamp?.toDate() || new Date()
+        });
+      });
       
       // Send messages in chronological order
       socket.emit('message_history', messages.reverse());
@@ -428,12 +265,12 @@ io.on('connection', (socket) => {
     const completeData = {
       ...data,
       sourceLang: data.sourceLang || 'EN', // Default to English if not specified
-      timestamp: new Date()
+      timestamp: admin.firestore.FieldValue.serverTimestamp()
     };
     
     try {
-      // Create and save the message to MongoDB
-      const message = new Message({
+      // Save message to Firestore
+      const messageRef = await db.collection('messages').add({
         userId: completeData.userId,
         userName: completeData.userName,
         message: completeData.message,
@@ -441,10 +278,10 @@ io.on('connection', (socket) => {
         timestamp: completeData.timestamp
       });
       
-      await message.save();
-      
-      // Add MongoDB _id to the emitted message
-      completeData._id = message._id;
+      // Add Firestore ID to the emitted message
+      completeData.id = messageRef.id;
+      // Convert timestamp for client
+      completeData.timestamp = new Date();
     } catch (error) {
       console.error('Error saving message to database:', error);
     }
@@ -453,48 +290,22 @@ io.on('connection', (socket) => {
     io.emit('chat_message', completeData);
   });
   
-  // Enhanced file sharing with absolute URLs
   socket.on('file_shared', async (data) => {
-    // Process file information before broadcasting
-    if (data.files) {
-      // Get the server's base URL for this connection
-      const protocol = socket.request.headers['x-forwarded-proto'] || 'http';
-      const host = socket.request.headers.host;
-      const baseUrl = `${protocol}://${host}`;
-      
-      data.files.forEach(file => {
-        // Ensure every file has an absolute URL
-        if (file.relativeUrl) {
-          file.url = `${baseUrl}${file.relativeUrl}`;
-        } else if (file.url && file.url.startsWith('/')) {
-          file.url = `${baseUrl}${file.url}`;
-        }
-        
-        // Keep the original reference too
-        if (!file.relativeUrl && file.url) {
-          if (file.url.includes(baseUrl)) {
-            file.relativeUrl = file.url.replace(baseUrl, '');
-          }
-        }
-      });
-    }
-    
     try {
-      // Create and save the file share message to MongoDB
-      const message = new Message({
+      // Save file share to Firestore
+      const messageRef = await db.collection('messages').add({
         userId: data.userId,
         userName: data.userName,
         files: data.files,
         isFileShare: true,
-        timestamp: new Date()
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
       });
       
-      await message.save();
+      // Add Firestore ID to the emitted message
+      data.id = messageRef.id;
+      data.timestamp = new Date();
       
-      // Add MongoDB _id to the emitted message
-      data._id = message._id;
-      
-      console.log(`File share saved and broadcast: ${data.files.length} files from ${data.userName}`);
+      console.log(`File share saved and broadcast: ${data.files?.length || 0} files from ${data.userName}`);
     } catch (error) {
       console.error('Error saving file share to database:', error);
     }
@@ -503,6 +314,8 @@ io.on('connection', (socket) => {
     io.emit('file_shared', data);
   });
   
+  // ...existing socket event handlers...
+
   socket.on('disconnect', () => {
     if (socket.userData) {
       console.log(`${socket.userData.userName} (${socket.userData.userId}) left the chat`);
@@ -517,11 +330,24 @@ io.on('connection', (socket) => {
       });
     }
   });
-  
-  // Handle connection errors
-  socket.on('error', (error) => {
-    console.error('Socket error:', error);
-  });
+});
+
+// Track active users
+const activeUsers = new Map(); // userId -> userData
+
+// Random name generator - first and last name combinations
+const firstNames = ['Amber', 'Blake', 'Casey', 'Dana', 'Ellis', 'Fran', 'Glenn', 'Harper', 'Indigo', 'Jordan', 'Kelly', 'Logan', 'Morgan', 'Noel', 'Parker', 'Quinn', 'Riley', 'Sage', 'Taylor', 'Val'];
+const lastNames = ['Sky', 'River', 'Stone', 'Wood', 'Moon', 'Star', 'Cloud', 'Ocean', 'Mountain', 'Meadow', 'Forest', 'Field', 'Valley', 'Garden', 'Lake', 'Dawn', 'Dusk', 'Storm', 'Wind', 'Rain'];
+
+function generateUniqueName() {
+  const first = firstNames[Math.floor(Math.random() * firstNames.length)];
+  const last = lastNames[Math.floor(Math.random() * lastNames.length)];
+  return `${first} ${last}`;
+}
+
+// Serve index.html
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // Start the server

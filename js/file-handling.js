@@ -1,5 +1,5 @@
 /**
- * File handling module for GlobalTalk chat application
+ * File handling module for GlobalTalk chat application with Cloudinary
  */
 
 // Cache DOM elements
@@ -8,6 +8,203 @@ const fileInput = document.getElementById('file-input');
 
 // Track selected files
 let selectedFiles = [];
+
+/**
+ * Upload files to Cloudinary via server with progress tracking
+ * @param {Array} files - Array of files to upload
+ */
+function handleFileUpload(files) {
+    if (files.length === 0) return;
+    
+    console.log(`Attempting to upload ${files.length} file(s):`, files);
+    
+    // Show upload in progress
+    const uploadingMsg = document.createElement('div');
+    uploadingMsg.className = 'text-center py-2 text-xs text-blue-400';
+    uploadingMsg.textContent = `Uploading ${files.length} file(s)...`;
+    window.uiModule.chatContainer.appendChild(uploadingMsg);
+    window.uiModule.chatContainer.scrollTop = window.uiModule.chatContainer.scrollHeight;
+    
+    // Create form data for the file upload
+    const formData = new FormData();
+    
+    // Add user ID to track file ownership
+    formData.append('userId', window.socketModule.userId());
+    
+    Array.from(files).forEach((file) => {
+        // Log file info for debugging
+        console.log(`Processing file: ${file.name}, type: ${file.type}, size: ${file.size}`);
+        
+        // Handle special file formats
+        let fileToUpload = file;
+        
+        // Handle APNG files specifically
+        if (file.name.toLowerCase().endsWith('.apng')) {
+            console.log("Handling APNG file with special MIME type");
+            fileToUpload = new File([file], file.name, { type: 'image/apng' });
+        } else if (file.name.toLowerCase().endsWith('.png')) {
+            console.log("Handling PNG file");
+            fileToUpload = new File([file], file.name, { type: 'image/png' });
+        }
+        
+        formData.append('files', fileToUpload);
+    });
+    
+    // Create XMLHttpRequest for progress tracking
+    const xhr = new XMLHttpRequest();
+    
+    // Track upload progress
+    xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+            const percent = (event.loaded / event.total) * 100;
+            uploadingMsg.textContent = `Uploading ${files.length} file(s)... ${Math.round(percent)}%`;
+        }
+    });
+    
+    // Handle completion
+    xhr.addEventListener('load', () => {
+        console.log("Upload completed. Status:", xhr.status, "Response:", xhr.responseText);
+        
+        if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+                const response = JSON.parse(xhr.responseText);
+                console.log("Parsed response:", response);
+                
+                // Remove uploading message
+                uploadingMsg.remove();
+                
+                // Create message with file attachments including URLs
+                if (response.files && response.files.length > 0) {
+                    createFileShareMessage(response.files, true);
+                    
+                    // Broadcast file metadata to other users using socket
+                    window.socketModule.emitFileShared(response.files);
+                } else {
+                    console.error("No files in response or empty array");
+                    uploadingMsg.textContent = 'Upload completed but no files were processed';
+                    uploadingMsg.classList.replace('text-blue-400', 'text-yellow-400');
+                }
+            } catch (parseError) {
+                console.error('Error parsing upload response:', parseError);
+                uploadingMsg.textContent = 'Upload failed: Invalid server response';
+                uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
+            }
+        } else {
+            try {
+                const errorData = JSON.parse(xhr.responseText);
+                console.error("Upload error response:", errorData);
+                uploadingMsg.textContent = `Upload failed: ${errorData.error || errorData.details || 'Server error'}`;
+                uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
+            } catch (e) {
+                console.error("Error parsing error response:", e);
+                uploadingMsg.textContent = `Upload failed (${xhr.status})`;
+                uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
+            }
+        }
+    });
+    
+    // Handle errors
+    xhr.addEventListener('error', (e) => {
+        console.error("Network error during upload:", e);
+        uploadingMsg.textContent = 'Upload failed: Network error occurred';
+        uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
+    });
+    
+    xhr.addEventListener('abort', () => {
+        console.log("Upload aborted");
+        uploadingMsg.textContent = 'Upload cancelled';
+        uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
+    });
+    
+    // Send the request
+    console.log("Sending upload request to /upload-multiple");
+    xhr.open('POST', '/upload-multiple');
+    xhr.send(formData);
+    
+    // Reset file input to allow selecting the same file again
+    fileInput.value = '';
+}
+
+/**
+ * Delete a file from Cloudinary via server
+ * @param {string} fileId - ID of the file to delete
+ * @param {HTMLElement} fileItemElement - Element to remove on success
+ */
+async function deleteFile(fileId, fileItemElement) {
+    // Show confirmation dialog
+    if (!confirm('Are you sure you want to delete this file? This cannot be undone.')) {
+        return;
+    }
+    
+    try {
+        // Add loading state to the element
+        fileItemElement.classList.add('opacity-50');
+        const deleteButton = fileItemElement.querySelector('button');
+        if (deleteButton) {
+            deleteButton.disabled = true;
+            deleteButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
+        
+        // Send delete request to server with user ID
+        const userId = window.socketModule.userId();
+        const response = await fetch(`/file/${fileId}?userId=${userId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.details || `Delete failed: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('File deleted successfully:', result);
+        
+        // Remove the file item with animation
+        fileItemElement.style.height = fileItemElement.offsetHeight + 'px';
+        fileItemElement.classList.add('file-deleting');
+        
+        setTimeout(() => {
+            fileItemElement.style.height = '0';
+            fileItemElement.style.opacity = '0';
+            fileItemElement.style.margin = '0';
+            fileItemElement.style.padding = '0';
+            
+            setTimeout(() => {
+                fileItemElement.remove();
+                
+                // Check if this was the last file in the container
+                const parentContainer = fileItemElement.closest('.files-container');
+                if (parentContainer && parentContainer.children.length === 0) {
+                    // If it was the last file, remove the entire message
+                    const messageBubble = parentContainer.closest('.message-bubble');
+                    if (messageBubble) messageBubble.remove();
+                }
+            }, 300);
+        }, 100);
+        
+    } catch (error) {
+        console.error('File deletion error:', error);
+        
+        // Reset the element's appearance
+        fileItemElement.classList.remove('opacity-50');
+        const deleteButton = fileItemElement.querySelector('button');
+        if (deleteButton) {
+            deleteButton.disabled = false;
+            deleteButton.innerHTML = '<i class="fas fa-times"></i>';
+        }
+        
+        // Show error notification
+        const errorNotification = document.createElement('div');
+        errorNotification.className = 'bg-red-500 text-white text-xs p-2 rounded mt-2';
+        errorNotification.textContent = `Failed to delete: ${error.message}`;
+        fileItemElement.appendChild(errorNotification);
+        
+        // Auto-remove the error after 5 seconds
+        setTimeout(() => {
+            errorNotification.remove();
+        }, 5000);
+    }
+}
 
 /**
  * Creates a message with file attachments
@@ -185,198 +382,6 @@ function createFileShareMessage(fileMetadata, isUser, senderName = null) {
     window.uiModule.chatContainer.scrollTop = window.uiModule.chatContainer.scrollHeight;
     
     return messageDiv;
-}
-
-/**
- * Delete a file from the server
- * @param {string} fileId - ID of the file to delete
- * @param {HTMLElement} fileItemElement - Element to remove on success
- */
-async function deleteFile(fileId, fileItemElement) {
-    // Show confirmation dialog
-    if (!confirm('Are you sure you want to delete this file? This cannot be undone.')) {
-        return;
-    }
-    
-    try {
-        // Add loading state to the element
-        fileItemElement.classList.add('opacity-50');
-        const deleteButton = fileItemElement.querySelector('button');
-        if (deleteButton) {
-            deleteButton.disabled = true;
-            deleteButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        }
-        
-        // Send delete request to the server
-        const response = await fetch(`/file/${fileId}`, {
-            method: 'DELETE'
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.details || `Delete failed: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        console.log('File deleted successfully:', result);
-        
-        // Remove the file item with animation
-        fileItemElement.style.height = fileItemElement.offsetHeight + 'px';
-        fileItemElement.classList.add('file-deleting');
-        
-        setTimeout(() => {
-            fileItemElement.style.height = '0';
-            fileItemElement.style.opacity = '0';
-            fileItemElement.style.margin = '0';
-            fileItemElement.style.padding = '0';
-            
-            setTimeout(() => {
-                fileItemElement.remove();
-                
-                // Check if this was the last file in the container
-                const parentContainer = fileItemElement.closest('.files-container');
-                if (parentContainer && parentContainer.children.length === 0) {
-                    // If it was the last file, remove the entire message
-                    const messageBubble = parentContainer.closest('.message-bubble');
-                    if (messageBubble) messageBubble.remove();
-                }
-            }, 300);
-        }, 100);
-        
-    } catch (error) {
-        console.error('File deletion error:', error);
-        
-        // Reset the element's appearance
-        fileItemElement.classList.remove('opacity-50');
-        const deleteButton = fileItemElement.querySelector('button');
-        if (deleteButton) {
-            deleteButton.disabled = false;
-            deleteButton.innerHTML = '<i class="fas fa-times"></i>';
-        }
-        
-        // Show error notification
-        const errorNotification = document.createElement('div');
-        errorNotification.className = 'bg-red-500 text-white text-xs p-2 rounded mt-2';
-        errorNotification.textContent = `Failed to delete: ${error.message}`;
-        fileItemElement.appendChild(errorNotification);
-        
-        // Auto-remove the error after 5 seconds
-        setTimeout(() => {
-            errorNotification.remove();
-        }, 5000);
-    }
-}
-
-/**
- * Upload files to server with progress tracking
- * @param {Array} files - Array of files to upload
- */
-function handleFileUpload(files) {
-    if (files.length === 0) return;
-    
-    console.log(`Attempting to upload ${files.length} file(s):`, files);
-    
-    // Show upload in progress
-    const uploadingMsg = document.createElement('div');
-    uploadingMsg.className = 'text-center py-2 text-xs text-blue-400';
-    uploadingMsg.textContent = `Uploading ${files.length} file(s)...`;
-    window.uiModule.chatContainer.appendChild(uploadingMsg);
-    window.uiModule.chatContainer.scrollTop = window.uiModule.chatContainer.scrollHeight;
-    
-    // Create form data for the file upload
-    const formData = new FormData();
-    Array.from(files).forEach((file) => {
-        // Log file info for debugging
-        console.log(`Processing file: ${file.name}, type: ${file.type}, size: ${file.size}`);
-        
-        // Handle special file formats
-        let fileToUpload = file;
-        
-        // Handle APNG files specifically - FIX: endswith -> endsWith (case matters)
-        if (file.name.toLowerCase().endsWith('.apng')) {
-            console.log("Handling APNG file with special MIME type");
-            fileToUpload = new File([file], file.name, { type: 'image/apng' });
-        } else if (file.name.toLowerCase().endsWith('.png')) {
-            console.log("Handling PNG file");
-            fileToUpload = new File([file], file.name, { type: 'image/png' });
-        }
-        
-        formData.append('files', fileToUpload);
-    });
-    
-    // Create XMLHttpRequest for progress tracking
-    const xhr = new XMLHttpRequest();
-    
-    // Track upload progress
-    xhr.upload.addEventListener('progress', (event) => {
-        if (event.lengthComputable) {
-            const percent = (event.loaded / event.total) * 100;
-            uploadingMsg.textContent = `Uploading ${files.length} file(s)... ${Math.round(percent)}%`;
-        }
-    });
-    
-    // Handle completion
-    xhr.addEventListener('load', () => {
-        console.log("Upload completed. Status:", xhr.status, "Response:", xhr.responseText);
-        
-        if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-                const response = JSON.parse(xhr.responseText);
-                console.log("Parsed response:", response);
-                
-                // Remove uploading message
-                uploadingMsg.remove();
-                
-                // Create message with file attachments including URLs
-                if (response.files && response.files.length > 0) {
-                    createFileShareMessage(response.files, true);
-                    
-                    // Broadcast file metadata to other users using socket
-                    window.socketModule.emitFileShared(response.files);
-                } else {
-                    console.error("No files in response or empty array");
-                    uploadingMsg.textContent = 'Upload completed but no files were processed';
-                    uploadingMsg.classList.replace('text-blue-400', 'text-yellow-400');
-                }
-            } catch (parseError) {
-                console.error('Error parsing upload response:', parseError);
-                uploadingMsg.textContent = 'Upload failed: Invalid server response';
-                uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
-            }
-        } else {
-            try {
-                const errorData = JSON.parse(xhr.responseText);
-                console.error("Upload error response:", errorData);
-                uploadingMsg.textContent = `Upload failed: ${errorData.error || errorData.details || 'Server error'}`;
-                uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
-            } catch (e) {
-                console.error("Error parsing error response:", e);
-                uploadingMsg.textContent = `Upload failed (${xhr.status})`;
-                uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
-            }
-        }
-    });
-    
-    // Handle errors
-    xhr.addEventListener('error', (e) => {
-        console.error("Network error during upload:", e);
-        uploadingMsg.textContent = 'Upload failed: Network error occurred';
-        uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
-    });
-    
-    xhr.addEventListener('abort', () => {
-        console.log("Upload aborted");
-        uploadingMsg.textContent = 'Upload cancelled';
-        uploadingMsg.classList.replace('text-blue-400', 'text-red-400');
-    });
-    
-    // Send the request
-    console.log("Sending upload request to /upload-multiple");
-    xhr.open('POST', '/upload-multiple');
-    xhr.send(formData);
-    
-    // Reset file input to allow selecting the same file again
-    fileInput.value = '';
 }
 
 // Set up file input event listeners
