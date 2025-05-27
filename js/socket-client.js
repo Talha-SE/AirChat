@@ -207,9 +207,9 @@ function connectToServer() {
                             
                             // Show original text in translation element
                             if (translationElement) {
-                                const sourceLabel = translationSource ? 
-                                    `Original <span class="text-xs text-blue-300">[via ${translationSource}]</span>` : 
-                                    'Original';
+                                const sourceLabel = typeof createSourceLabel === 'function' 
+                                    ? createSourceLabel(translationSource) 
+                                    : `Original <span class="text-xs text-blue-300">[via ${translationSource || 'Unknown'}]</span>`;
                                 
                                 translationElement.innerHTML = `
                                     <span class="translated-label">${sourceLabel}</span>
@@ -519,4 +519,27 @@ function updateMessageExpirationTimers() {
             expirationEl.classList.add('warning');
         }
     });
+}
+
+// Define createSourceLabel here as a fallback if ui-handlers.js implementation isn't available
+function createSourceLabel(translationSource) {
+    if (!translationSource) return 'Original';
+    
+    let sourceClass = '';
+    
+    switch(translationSource) {
+        case 'DeepSeek':
+            sourceClass = 'deepseek-indicator';
+            break;
+        case 'Gemini':
+            sourceClass = 'gemini-indicator';
+            break;
+        case 'DeepL':
+            sourceClass = 'deepl-indicator';
+            break;
+        default:
+            sourceClass = '';
+    }
+    
+    return `Original <span class="${sourceClass}">[${translationSource}]</span>`;
 }

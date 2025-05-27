@@ -291,6 +291,33 @@ document.addEventListener('click', function(event) {
     }
 });
 
+/**
+ * Creates a source label with appropriate styling
+ * @param {string} translationSource - Source of translation service
+ * @returns {string} HTML for the source label
+ */
+function createSourceLabel(translationSource) {
+    if (!translationSource) return 'Original';
+    
+    let sourceClass = '';
+    
+    switch(translationSource) {
+        case 'DeepSeek':
+            sourceClass = 'deepseek-indicator';
+            break;
+        case 'Gemini':
+            sourceClass = 'gemini-indicator';
+            break;
+        case 'DeepL':
+            sourceClass = 'deepl-indicator';
+            break;
+        default:
+            sourceClass = '';
+    }
+    
+    return `Original <span class="${sourceClass}">[${translationSource}]</span>`;
+}
+
 // Language selector click handlers
 languageSelectors.forEach(selector => {
     selector.addEventListener('click', function() {
@@ -301,71 +328,73 @@ languageSelectors.forEach(selector => {
         window.translationModule.setLanguage(newLanguage);
         localStorage.setItem('preferred_language', newLanguage);
         
+        // Update UI
         translateToggle.innerHTML = `<i class="fas fa-language text-blue-400"></i><span class="ml-2">${this.textContent}</span>`;
         languageDropdown.classList.add('hidden');
         
-        // Only retranslate messages if the language changed
-        if (previousLanguage !== newLanguage) {
-            console.log(`Language changed from ${previousLanguage} to ${newLanguage}, retranslating messages`);
-            // Get all messages from others
-            const otherMessages = document.querySelectorAll('.message-bubble.other-message');
+        // Reset translation cache when language changes
+        window.translationModule.clearCache();
+        
+        // Always retranslate messages when language selector is clicked
+        console.log(`Language changed from ${previousLanguage} to ${newLanguage}, retranslating messages`);
+        // Get all messages from others
+        const otherMessages = document.querySelectorAll('.message-bubble.other-message');
+        
+        otherMessages.forEach(messageEl => {
+            const messageText = messageEl.querySelector('.message-text');
+            const translationEl = messageEl.querySelector('.translated-message');
             
-            otherMessages.forEach(messageEl => {
-                const messageText = messageEl.querySelector('.message-text');
-                const translationEl = messageEl.querySelector('.translated-message');
+            if (!messageText) return; // Skip if no message text element
+            
+            // Get original text
+            const originalText = messageText.getAttribute('data-original');
+            if (!originalText) return; // Skip if no original text stored
+            
+            if (newLanguage) {
+                // Show translating state
+                messageText.textContent = 'Translating...';
                 
-                if (!messageText) return; // Skip if no message text element
-                
-                // Get original text
-                const originalText = messageText.getAttribute('data-original');
-                if (!originalText) return; // Skip if no original text stored
-                
-                if (newLanguage) {
-                    // Show translating state
-                    messageText.textContent = 'Translating...';
-                    
-                    // Translate to new language
-                    window.translationModule.translateText(originalText, newLanguage)
-                        .then(result => {
-                            const translatedText = result.translation;
-                            const translationSource = result.source;
+                // Translate to new language
+                window.translationModule.translateText(originalText, newLanguage)
+                    .then(result => {
+                        const translatedText = result.translation;
+                        const translationSource = result.source;
+                        
+                        if (translatedText !== originalText) {
+                            // Update main message content with translation
+                            messageText.textContent = translatedText;
                             
-                            if (translatedText !== originalText) {
-                                // Update main message content with translation
-                                messageText.textContent = translatedText;
-                                
-                                // Show original in translation area
-                                if (translationEl) {
-                                    translationEl.innerHTML = `
-                                        <span class="translated-label">${createSourceLabel(translationSource)}</span>
-                                        <p>${originalText}</p>
-                                    `;
-                                    translationEl.classList.remove('hidden');
-                                }
-                            } else {
-                                // If translation is same as original, just show original
-                                messageText.textContent = originalText;
-                                if (translationEl) {
-                                    translationEl.classList.add('hidden');
-                                }
+                            // Show original in translation area
+                            if (translationEl) {
+                                translationEl.innerHTML = `
+                                    <span class="translated-label">${createSourceLabel(translationSource)}</span>
+                                    <p>${originalText}</p>
+                                `;
+                                translationEl.classList.remove('hidden');
                             }
-                        })
-                        .catch(err => {
-                            console.error('Translation error:', err);
-                            messageText.textContent = originalText; // Revert to original on error
+                        } else {
+                            // If translation is same as original, just show original
+                            messageText.textContent = originalText;
                             if (translationEl) {
                                 translationEl.classList.add('hidden');
                             }
-                        });
-                } else {
-                    // If no language selected, show original text
-                    messageText.textContent = originalText;
-                    if (translationEl) {
-                        translationEl.classList.add('hidden');
-                    }
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Translation error:', err);
+                        messageText.textContent = originalText; // Revert to original on error
+                        if (translationEl) {
+                            translationEl.classList.add('hidden');
+                        }
+                    });
+            } else {
+                // If no language selected, show original text
+                messageText.textContent = originalText;
+                if (translationEl) {
+                    translationEl.classList.add('hidden');
                 }
-            });
-        }
+            }
+        });
     });
 });
 

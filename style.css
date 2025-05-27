@@ -349,6 +349,40 @@ body {
     opacity: 1;
 }
 
+/* Enhanced language selector dropdown */
+#language-dropdown {
+    max-height: 400px;
+    width: 320px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #475569 #1e293b;
+}
+
+#language-dropdown::-webkit-scrollbar {
+    width: 6px;
+}
+
+#language-dropdown::-webkit-scrollbar-track {
+    background: #1e293b;
+    border-radius: 10px;
+}
+
+#language-dropdown::-webkit-scrollbar-thumb {
+    background: #475569;
+    border-radius: 10px;
+}
+
+/* Language indicator styling */
+.language-selector {
+    text-align: left;
+    transition: all 0.2s ease;
+}
+
+.language-selector.active {
+    background-color: rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.5);
+}
+
 .message-input {
     transition: all 0.3s ease;
     border: 1px solid transparent;
