@@ -326,7 +326,10 @@ languageSelectors.forEach(selector => {
                     
                     // Translate to new language
                     window.translationModule.translateText(originalText, newLanguage)
-                        .then(translatedText => {
+                        .then(result => {
+                            const translatedText = result.translation;
+                            const translationSource = result.source;
+                            
                             if (translatedText !== originalText) {
                                 // Update main message content with translation
                                 messageText.textContent = translatedText;
@@ -334,7 +337,7 @@ languageSelectors.forEach(selector => {
                                 // Show original in translation area
                                 if (translationEl) {
                                     translationEl.innerHTML = `
-                                        <span class="translated-label">Original</span>
+                                        <span class="translated-label">${createSourceLabel(translationSource)}</span>
                                         <p>${originalText}</p>
                                     `;
                                     translationEl.classList.remove('hidden');

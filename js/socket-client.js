@@ -194,7 +194,10 @@ function connectToServer() {
                 
                 // Translate received message
                 window.translationModule.translateText(data.message, currentLang)
-                    .then(translatedText => {
+                    .then(result => {
+                        const translatedText = result.translation;
+                        const translationSource = result.source;
+                        
                         // Only update if translation is different from original
                         if (translatedText !== data.message) {
                             // Update the main message content with translation
@@ -204,8 +207,12 @@ function connectToServer() {
                             
                             // Show original text in translation element
                             if (translationElement) {
+                                const sourceLabel = translationSource ? 
+                                    `Original <span class="text-xs text-blue-300">[via ${translationSource}]</span>` : 
+                                    'Original';
+                                
                                 translationElement.innerHTML = `
-                                    <span class="translated-label">Original</span>
+                                    <span class="translated-label">${sourceLabel}</span>
                                     <p>${data.message}</p>
                                 `;
                                 translationElement.classList.remove('hidden');

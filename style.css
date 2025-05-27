@@ -173,6 +173,36 @@ body {
     letter-spacing: 0.05em;
 }
 
+.translated-label span {
+    font-size: 0.55rem;
+    opacity: 0.8;
+    font-style: italic;
+    margin-left: 4px;
+}
+
+.deepseek-indicator,
+.gemini-indicator,
+.deepl-indicator {
+    font-size: 0.55rem;
+    opacity: 0.8;
+    background-color: rgba(0, 0, 0, 0.2);
+    padding: 1px 4px;
+    border-radius: 4px;
+    margin-left: 4px;
+}
+
+.deepseek-indicator {
+    color: #6ee7b7; /* Light green */
+}
+
+.gemini-indicator {
+    color: #93c5fd; /* Light blue */
+}
+
+.deepl-indicator {
+    color: #c4b5fd; /* Light purple */
+}
+
 .user-avatar, .other-avatar {
     width: 28px; /* Reduced from 32px */
     height: 28px; /* Reduced from 32px */

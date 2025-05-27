@@ -125,34 +125,192 @@ app.post('/translate', async (req, res) => {
     
     console.log(`Translation request: "${text}" to ${targetLang}`);
     
-    // Use DeepL API for translation
+    // Initialize translation variables
+    let translation = null;
+    let translationSource = '';
+    
+    // Get API keys
+    const huggingfaceApiKey = process.env.HUGGINGFACE_API_KEY;
+    const geminiApiKey = process.env.GEMINI_API_KEY;
     const deepLApiKey = process.env.DEEPL_API_KEY;
     
-    if (!deepLApiKey) {
-      return res.status(500).json({ error: 'Translation API key not configured' });
-    }
+    // Get language name from code for better prompting
+    const languageNames = {
+      'EN': 'English',
+      'ES': 'Spanish',
+      'FR': 'French',
+      'DE': 'German',
+      'IT': 'Italian',
+      'JA': 'Japanese',
+      'KO': 'Korean',
+      'ZH': 'Chinese',
+      'RU': 'Russian',
+      'PT': 'Portuguese',
+      'NL': 'Dutch',
+      'PL': 'Polish',
+      'AR': 'Arabic',
+      'TR': 'Turkish',
+      'SV': 'Swedish',
+      'HE': 'Hebrew',
+      'DA': 'Danish',
+      'FI': 'Finnish',
+      'CS': 'Czech',
+      'HU': 'Hungarian'
+      // Add more as needed
+    };
     
-    // Configure DeepL API request
-    const response = await axios({
-      method: 'POST',
-      url: 'https://api-free.deepl.com/v2/translate',
-      headers: {
-        'Authorization': `DeepL-Auth-Key ${deepLApiKey}`,
-        'Content-Type': 'application/json'
-      },
-      data: {
-        text: [text],
-        target_lang: targetLang
+    const targetLanguageName = languageNames[targetLang] || targetLang;
+    
+    // Try DeepSeek via Hugging Face first if available
+    if (huggingfaceApiKey) {
+      try {
+        console.log('Attempting translation with DeepSeek AI via Hugging Face...');
+        
+        // Prepare DeepSeek prompt
+        const deepSeekPrompt = `Translate the following text to ${targetLanguageName}. Return ONLY the translated text with no additional explanations or notes: "${text}"`;
+        
+        // Prepare Hugging Face API request
+        const deepSeekResponse = await axios({
+          method: 'POST',
+          url: 'https://router.huggingface.co/hyperbolic/v1/chat/completions',
+          headers: {
+            'Authorization': `Bearer ${huggingfaceApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          data: {
+            messages: [
+              {
+                role: "user",
+                content: deepSeekPrompt
+              }
+            ],
+            model: "deepseek-ai/DeepSeek-V3-0324",
+            stream: false
+          }
+        });
+        
+        // Extract translated text from DeepSeek response
+        if (deepSeekResponse.data && 
+            deepSeekResponse.data.choices && 
+            deepSeekResponse.data.choices[0] && 
+            deepSeekResponse.data.choices[0].message && 
+            deepSeekResponse.data.choices[0].message.content) {
+          
+          translation = deepSeekResponse.data.choices[0].message.content.trim();
+          translationSource = 'DeepSeek';
+          
+          // Remove any quotation marks that might have been included
+          translation = translation.replace(/^["']|["']$/g, '');
+          
+          // Remove any "Translation:" prefix if present
+          translation = translation.replace(/^Translation:\s*/i, '');
+          
+          console.log(`DeepSeek translation successful: "${translation}"`);
+        } else {
+          throw new Error('Unexpected DeepSeek API response format');
+        }
+      } catch (deepSeekError) {
+        console.error('DeepSeek translation failed:', deepSeekError.message);
+        console.log('Falling back to Gemini...');
+        // Continue to Gemini fallback
       }
-    });
-    
-    if (response.data && response.data.translations && response.data.translations.length > 0) {
-      const translation = response.data.translations[0].text;
-      console.log(`Translation result: "${translation}"`);
-      return res.json({ translation });
-    } else {
-      throw new Error('Invalid response from translation service');
     }
+    
+    // Try Gemini if DeepSeek failed
+    if (!translation && geminiApiKey) {
+      try {
+        console.log('Attempting translation with Gemini...');
+        
+        // Prepare Gemini API request
+        const geminiResponse = await axios({
+          method: 'POST',
+          url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          data: {
+            contents: [
+              {
+                parts: [
+                  {
+                    text: `Translate the following text to ${targetLanguageName}. Return ONLY the translated text with no additional explanations or notes: "${text}"`
+                  }
+                ]
+              }
+            ]
+          }
+        });
+        
+        // Extract translated text from Gemini response
+        if (geminiResponse.data && 
+            geminiResponse.data.candidates && 
+            geminiResponse.data.candidates[0] && 
+            geminiResponse.data.candidates[0].content && 
+            geminiResponse.data.candidates[0].content.parts && 
+            geminiResponse.data.candidates[0].content.parts[0] && 
+            geminiResponse.data.candidates[0].content.parts[0].text) {
+          
+          translation = geminiResponse.data.candidates[0].content.parts[0].text.trim();
+          translationSource = 'Gemini';
+          
+          // Remove any quotation marks that might have been included
+          translation = translation.replace(/^["']|["']$/g, '');
+          
+          console.log(`Gemini translation successful: "${translation}"`);
+        } else {
+          throw new Error('Unexpected Gemini API response format');
+        }
+      } catch (geminiError) {
+        console.error('Gemini translation failed:', geminiError.message);
+        console.log('Falling back to DeepL...');
+        // Continue to DeepL fallback
+      }
+    }
+    
+    // Fallback to DeepL if both previous methods failed
+    if (!translation && deepLApiKey) {
+      try {
+        console.log('Attempting translation with DeepL...');
+        
+        // Configure DeepL API request
+        const deepLResponse = await axios({
+          method: 'POST',
+          url: 'https://api-free.deepl.com/v2/translate',
+          headers: {
+            'Authorization': `DeepL-Auth-Key ${deepLApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          data: {
+            text: [text],
+            target_lang: targetLang
+          }
+        });
+        
+        if (deepLResponse.data && 
+            deepLResponse.data.translations && 
+            deepLResponse.data.translations.length > 0) {
+          
+          translation = deepLResponse.data.translations[0].text;
+          translationSource = 'DeepL';
+          console.log(`DeepL translation successful: "${translation}"`);
+        } else {
+          throw new Error('Invalid response from DeepL service');
+        }
+      } catch (deepLError) {
+        console.error('DeepL translation failed:', deepLError.message);
+        throw new Error('All translation services failed');
+      }
+    }
+    
+    if (!translation) {
+      return res.status(500).json({ error: 'Translation failed: No translation service available' });
+    }
+    
+    // Return the successful translation
+    return res.json({ 
+      translation,
+      source: translationSource
+    });
   } catch (error) {
     console.error('Translation error:', error.message);
     res.status(500).json({ 

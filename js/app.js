@@ -27,4 +27,41 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initial scroll to bottom
     window.uiModule.chatContainer.scrollTop = window.uiModule.chatContainer.scrollHeight;
+    
+    // Check translation service status
+    checkTranslationStatus();
 });
+
+/**
+ * Checks the translation service status and updates the UI
+ */
+async function checkTranslationStatus() {
+    try {
+        // Simple translation to test service availability
+        const testResult = await window.translationModule.translateText("Hello world", "ES");
+        
+        // Update the translation service status in header
+        const statusElement = document.querySelector('.app-header p');
+        if (statusElement) {
+            statusElement.innerHTML = `<span class="text-green-400">● </span>Using ${testResult.source || 'Unknown'} translation`;
+            
+            // Add tooltip to show fallback service information
+            if (testResult.source === 'DeepSeek') {
+                statusElement.title = 'DeepSeek AI is active (Gemini and DeepL as fallbacks)';
+            } else if (testResult.source === 'Gemini') {
+                statusElement.title = 'Using Gemini translation (DeepL as fallback)';
+            } else if (testResult.source === 'DeepL') {
+                statusElement.title = 'Using DeepL translation (fallback service)';
+            }
+        }
+    } catch (error) {
+        console.error('Translation service check failed:', error);
+        
+        // Update status to show error
+        const statusElement = document.querySelector('.app-header p');
+        if (statusElement) {
+            statusElement.innerHTML = '<span class="text-red-400">● </span>Translation service unavailable';
+            statusElement.title = 'Check your internet connection or API keys';
+        }
+    }
+}

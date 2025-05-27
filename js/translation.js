@@ -9,13 +9,13 @@ let selectedLanguage = localStorage.getItem('preferred_language') || ''; // No d
  * Translates text to the specified target language
  * @param {string} text - Text to translate
  * @param {string} targetLang - Target language code
- * @returns {Promise<string>} Translated text
+ * @returns {Promise<object>} Translated text and source information
  */
 async function translateText(text, targetLang) {
     console.log(`Requesting translation to ${targetLang}: "${text}"`);
     
     if (!targetLang || targetLang === '') {
-        return Promise.resolve(text); // No translation needed
+        return Promise.resolve({ translation: text, source: null }); // No translation needed
     }
     
     try {
@@ -39,14 +39,17 @@ async function translateText(text, targetLang) {
         
         const data = await response.json();
         if (data && data.translation) {
-            return data.translation;
+            return {
+                translation: data.translation,
+                source: data.source || 'Unknown'
+            };
         } else {
             throw new Error('Invalid translation response format');
         }
     } catch (error) {
         console.error('Translation error:', error);
         // Just return the original text on failure
-        return text;
+        return { translation: text, source: null };
     }
 }
 
