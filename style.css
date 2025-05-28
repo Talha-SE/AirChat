@@ -180,6 +180,45 @@ body {
     margin-left: 4px;
 }
 
+/* Language selector styling enhancements */
+.language-selector {
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+}
+
+/* Active language state */
+.language-selector.active {
+    background-color: rgba(59, 130, 246, 0.2);
+    border-left: 3px solid #3b82f6;
+    font-weight: 500;
+}
+
+/* Ensure emojis have proper spacing and alignment */
+.language-selector i + span {
+    margin-left: 4px;
+}
+
+/* Flag emojis should have consistent sizing */
+.language-selector .flag-emoji {
+    font-size: 1.2em;
+    margin-right: 4px;
+}
+
+/* Mobile optimizations for language selector */
+@media (max-width: 640px) {
+    .language-selector {
+        font-size: 0.85rem;
+    }
+    
+    #language-dropdown {
+        max-width: 90vw;
+    }
+}
+
 .deepseek-indicator,
 .gemini-indicator,
 .deepl-indicator {
@@ -201,6 +240,50 @@ body {
 
 .deepl-indicator {
     color: #c4b5fd; /* Light purple */
+}
+
+/* Add tone indicator styles */
+.tone-indicator {
+    font-style: italic;
+    font-size: 0.5rem;
+    opacity: 0.9;
+    background-color: rgba(0, 0, 0, 0.15);
+    padding: 0 3px;
+    border-radius: 3px;
+    margin-left: 2px;
+    color: #fcd34d; /* Light yellow */
+}
+
+/* Custom checkbox style for tone understanding */
+#tone-understanding {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border: 1px solid #475569;
+    border-radius: 3px;
+    background-color: #1e293b;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+#tone-understanding:checked {
+    background-color: #3b82f6;
+    border-color: #2563eb;
+}
+
+#tone-understanding:checked::after {
+    content: '✓';
+    position: absolute;
+    color: white;
+    font-size: 10px;
+    top: -1px;
+    left: 2px;
+}
+
+#tone-understanding:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
 }
 
 .user-avatar, .other-avatar {

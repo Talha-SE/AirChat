@@ -16,8 +16,8 @@ const { cloudinary, upload } = require('./cloudinary-config');
 dotenv.config();
 
 // Message expiration time in milliseconds (2 hours)
-//const MESSAGE_EXPIRATION_TIME = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
-const MESSAGE_EXPIRATION_TIME = 60 * 1000; 
+const MESSAGE_EXPIRATION_TIME = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
+
 // Initialize message deletion worker
 function initializeMessageExpirationSystem() {
   console.log('Initializing message expiration system...');
@@ -117,17 +117,23 @@ app.use(express.json());
 // Translation endpoint
 app.post('/translate', async (req, res) => {
   try {
-    const { text, targetLang } = req.body;
+    const { text, targetLang, toneUnderstanding } = req.body;
     
+    // Enhanced validation
     if (!text || !targetLang) {
+      console.error('Translation request missing parameters:', { text: !!text, targetLang: !!targetLang });
       return res.status(400).json({ error: 'Missing required parameters' });
     }
     
-    console.log(`Translation request: "${text}" to ${targetLang}`);
+    // Normalize language code to uppercase for consistency
+    const normalizedTargetLang = targetLang.toUpperCase();
+    
+    console.log(`Translation request: "${text}" to ${normalizedTargetLang}, tone understanding: ${toneUnderstanding ? 'enabled' : 'disabled'}`);
     
     // Initialize translation variables
     let translation = null;
     let translationSource = '';
+    let detectedTone = null;
     
     // Get API keys
     const huggingfaceApiKey = process.env.HUGGINGFACE_API_KEY;
@@ -160,19 +166,90 @@ app.post('/translate', async (req, res) => {
       'HI': 'Hindi',
       'TH': 'Thai',
       'VI': 'Vietnamese',
-      'ID': 'Indonesian'
-      // Add more as needed
+      'ID': 'Indonesian',
+      // Additional languages
+      'RO': 'Romanian',
+      'EL': 'Greek',
+      'BG': 'Bulgarian',
+      'HR': 'Croatian',
+      'SK': 'Slovak',
+      'LT': 'Lithuanian',
+      'LV': 'Latvian',
+      'ET': 'Estonian',
+      'SL': 'Slovenian',
+      'MS': 'Malay',
+      'NO': 'Norwegian',
+      'FA': 'Persian',
+      'BN': 'Bengali',
+      'TA': 'Tamil',
+      'UR': 'Urdu',
+      'SW': 'Swahili'
     };
     
-    const targetLanguageName = languageNames[targetLang] || targetLang;
+    // Get the full language name or fall back to the code
+    const targetLanguageName = languageNames[normalizedTargetLang] || normalizedTargetLang;
+    
+    // If tone understanding is enabled, first analyze the tone with DeepSeek
+    if (toneUnderstanding && huggingfaceApiKey) {
+      try {
+        console.log('Analyzing message tone with DeepSeek AI...');
+        
+        // Prepare tone analysis prompt
+        const tonePrompt = `Analyze the tone of the following message and reply with only one word that best describes the tone (e.g., formal, informal, friendly, serious, angry, happy, sad, urgent, etc.): "${text}"`;
+        
+        // Send request to DeepSeek for tone analysis
+        const toneResponse = await axios({
+          method: 'POST',
+          url: 'https://router.huggingface.co/hyperbolic/v1/chat/completions',
+          headers: {
+            'Authorization': `Bearer ${huggingfaceApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          data: {
+            messages: [
+              {
+                role: "user",
+                content: tonePrompt
+              }
+            ],
+            model: "deepseek-ai/DeepSeek-V3-0324",
+            stream: false
+          }
+        });
+        
+        if (toneResponse.data && 
+            toneResponse.data.choices && 
+            toneResponse.data.choices[0] && 
+            toneResponse.data.choices[0].message && 
+            toneResponse.data.choices[0].message.content) {
+          
+          detectedTone = toneResponse.data.choices[0].message.content.trim();
+          // Clean up response to get just the tone word
+          detectedTone = detectedTone.replace(/^the tone is |tone:|the message sounds |the message is |^tone is /i, '');
+          detectedTone = detectedTone.split(' ')[0]; // Take just the first word
+          detectedTone = detectedTone.replace(/[^a-zA-Z]/g, ''); // Remove any non-letter characters
+          
+          console.log(`Detected tone: ${detectedTone}`);
+        }
+      } catch (toneError) {
+        console.error('Error analyzing message tone:', toneError.message);
+        // Continue with translation even if tone analysis fails
+      }
+    }
     
     // Try DeepSeek via Hugging Face first if available
     if (huggingfaceApiKey) {
       try {
-        console.log('Attempting translation with DeepSeek AI via Hugging Face...');
+        console.log(`Attempting translation with DeepSeek AI via Hugging Face to ${targetLanguageName}...`);
         
-        // Prepare DeepSeek prompt
-        const deepSeekPrompt = `Translate the following text to ${targetLanguageName}. Return ONLY the translated text with no additional explanations or notes: "${text}"`;
+        // Prepare DeepSeek prompt with tone information if available
+        let deepSeekPrompt;
+        
+        if (toneUnderstanding && detectedTone) {
+          deepSeekPrompt = `Translate the following ${detectedTone} message to ${targetLanguageName} language, preserving the ${detectedTone} tone. Return ONLY the translated text with no additional explanations or notes: "${text}"`;
+        } else {
+          deepSeekPrompt = `Translate the following text to ${targetLanguageName} language only. Return ONLY the translated text with no additional explanations or notes: "${text}"`;
+        }
         
         // Prepare Hugging Face API request
         const deepSeekResponse = await axios({
@@ -210,12 +287,12 @@ app.post('/translate', async (req, res) => {
           // Remove any "Translation:" prefix if present
           translation = translation.replace(/^Translation:\s*/i, '');
           
-          console.log(`DeepSeek translation successful: "${translation}"`);
+          console.log(`DeepSeek translation to ${targetLanguageName} successful: "${translation}"`);
         } else {
           throw new Error('Unexpected DeepSeek API response format');
         }
       } catch (deepSeekError) {
-        console.error('DeepSeek translation failed:', deepSeekError.message);
+        console.error(`DeepSeek translation to ${targetLanguageName} failed:`, deepSeekError.message);
         console.log('Falling back to Gemini...');
         // Continue to Gemini fallback
       }
@@ -224,7 +301,16 @@ app.post('/translate', async (req, res) => {
     // Try Gemini if DeepSeek failed
     if (!translation && geminiApiKey) {
       try {
-        console.log('Attempting translation with Gemini...');
+        console.log(`Attempting translation with Gemini to ${targetLanguageName}...`);
+        
+        // Prepare Gemini prompt with tone information if available
+        let geminiPrompt;
+        
+        if (toneUnderstanding && detectedTone) {
+          geminiPrompt = `Translate the following ${detectedTone} message to ${targetLanguageName} language, preserving the ${detectedTone} tone. Return ONLY the translated text with no additional explanations or notes: "${text}"`;
+        } else {
+          geminiPrompt = `Translate the following text directly to ${targetLanguageName} language. Return ONLY the translated text with no additional explanations or notes: "${text}"`;
+        }
         
         // Prepare Gemini API request
         const geminiResponse = await axios({
@@ -238,7 +324,7 @@ app.post('/translate', async (req, res) => {
               {
                 parts: [
                   {
-                    text: `Translate the following text to ${targetLanguageName}. Return ONLY the translated text with no additional explanations or notes: "${text}"`
+                    text: geminiPrompt
                   }
                 ]
               }
@@ -261,18 +347,19 @@ app.post('/translate', async (req, res) => {
           // Remove any quotation marks that might have been included
           translation = translation.replace(/^["']|["']$/g, '');
           
-          console.log(`Gemini translation successful: "${translation}"`);
+          console.log(`Gemini translation to ${targetLanguageName} successful: "${translation}"`);
         } else {
           throw new Error('Unexpected Gemini API response format');
         }
       } catch (geminiError) {
-        console.error('Gemini translation failed:', geminiError.message);
+        console.error(`Gemini translation to ${targetLanguageName} failed:`, geminiError.message);
         console.log('Falling back to DeepL...');
         // Continue to DeepL fallback
       }
     }
     
     // Fallback to DeepL if both previous methods failed
+    // DeepL doesn't support tone understanding, so we use it as a last resort
     if (!translation && deepLApiKey) {
       try {
         console.log('Attempting translation with DeepL...');
@@ -311,10 +398,12 @@ app.post('/translate', async (req, res) => {
       return res.status(500).json({ error: 'Translation failed: No translation service available' });
     }
     
-    // Return the successful translation
+    // Return the successful translation with tone information if available
     return res.json({ 
       translation,
-      source: translationSource
+      source: translationSource,
+      targetLang: normalizedTargetLang, // Return the target language for verification
+      tone: detectedTone // Include detected tone when available
     });
   } catch (error) {
     console.error('Translation error:', error.message);
@@ -630,33 +719,35 @@ io.on('connection', (socket) => {
     // Add expiration time to message data for client awareness
     const expirationTime = new Date(Date.now() + MESSAGE_EXPIRATION_TIME);
     
-    // Ensure message has the source language
+    // Ensure message has the source language and preserve tempId
     const completeData = {
-      ...data,
-      sourceLang: data.sourceLang || 'EN', // Default to English if not specified
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      expiresAt: admin.firestore.Timestamp.fromDate(expirationTime)
+        ...data,
+        sourceLang: data.sourceLang || 'EN', // Default to English if not specified
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: admin.firestore.Timestamp.fromDate(expirationTime)
     };
     
     try {
-      // Save message to Firestore
-      const messageRef = await db.collection('messages').add({
-        userId: completeData.userId,
-        userName: completeData.userName,
-        message: completeData.message,
-        sourceLang: completeData.sourceLang,
-        timestamp: completeData.timestamp,
-        expiresAt: completeData.expiresAt // Store expiration time
-      });
-      
-      // Add Firestore ID to the emitted message
-      completeData.id = messageRef.id;
-      // Convert timestamp for client
-      completeData.timestamp = new Date();
-      // Add expiration time to client format
-      completeData.expiresAt = expirationTime;
+        // Save message to Firestore
+        const messageRef = await db.collection('messages').add({
+            userId: completeData.userId,
+            userName: completeData.userName,
+            message: completeData.message,
+            sourceLang: completeData.sourceLang,
+            timestamp: completeData.timestamp,
+            expiresAt: completeData.expiresAt // Store expiration time
+        });
+        
+        // Add Firestore ID to the emitted message
+        completeData.id = messageRef.id;
+        // Convert timestamp for client
+        completeData.timestamp = new Date();
+        // Add expiration time to client format
+        completeData.expiresAt = expirationTime;
+        // Keep the tempId if it exists to help the client match messages
+        // completeData.tempId is already preserved from the spread operation
     } catch (error) {
-      console.error('Error saving message to database:', error);
+        console.error('Error saving message to database:', error);
     }
     
     // Broadcast the message to all clients

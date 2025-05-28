@@ -153,12 +153,74 @@ function connectToServer() {
         
         // Store the message ID
         const messageId = data.id;
+        const tempId = data.tempId;
         
         // Store expiration time if available
         const expiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
         
-        // Only process messages from other users
-        if (data.userId && data.userId !== userId) {
+        // Check if this is our own message coming back from the server
+        if (data.userId === userId) {
+            // Find if we have a temporary message with matching tempId
+            if (tempId) {
+                const tempMessage = document.querySelector(`.message-bubble[data-message-id="${tempId}"]`);
+                if (tempMessage) {
+                    // Update the temporary message with the real ID and expiration data
+                    tempMessage.dataset.messageId = messageId;
+                    
+                    // Add expiration time if available
+                    if (expiresAt) {
+                        tempMessage.dataset.expiresAt = expiresAt.getTime();
+                        
+                        // Add or update expiration indicator
+                        let expirationEl = tempMessage.querySelector('.message-expiration');
+                        if (!expirationEl) {
+                            expirationEl = document.createElement('div');
+                            expirationEl.className = 'message-expiration';
+                            tempMessage.querySelector('.message-content').appendChild(expirationEl);
+                        }
+                        
+                        // Format remaining time
+                        const now = new Date();
+                        const remainingMs = expiresAt - now;
+                        const remainingMins = Math.floor(remainingMs / 60000);
+                        let timeText;
+                        
+                        if (remainingMins > 60) {
+                            const hours = Math.floor(remainingMins / 60);
+                            const mins = remainingMins % 60;
+                            timeText = `${hours}h ${mins}m`;
+                        } else {
+                            timeText = `${remainingMins}m`;
+                        }
+                        
+                        expirationEl.textContent = `Expires in ${timeText}`;
+                        
+                        // Add urgency class based on remaining time
+                        if (remainingMins < 10) {
+                            expirationEl.classList.add('urgent');
+                        } else if (remainingMins < 30) {
+                            expirationEl.classList.add('warning');
+                        }
+                    }
+                    
+                    // Return early to avoid adding another copy of the message
+                    return;
+                }
+            }
+            
+            // If we didn't find a temporary message (perhaps because of a page refresh),
+            // or if there's no tempId, then add the message normally
+            window.uiModule.addMessage(
+                data.message, 
+                true, 
+                '', 
+                null, 
+                messageId,
+                expiresAt
+            );
+        } 
+        // Process messages from other users as before
+        else if (data.userId && data.userId !== userId) {
             console.log('Adding message from:', data.userName);
             
             // Get current language preference
@@ -192,11 +254,17 @@ function connectToServer() {
                     messageTextElement.textContent = 'Translating...';
                 }
                 
+                // Ensure we're using the current user-selected language
+                console.log(`Translating message to user's selected language: ${currentLang}`);
+                
                 // Translate received message
                 window.translationModule.translateText(data.message, currentLang)
                     .then(result => {
                         const translatedText = result.translation;
                         const translationSource = result.source;
+                        const tone = result.tone; // Get detected tone if available
+                        
+                        console.log(`Translation complete. Source: ${translationSource}${tone ? `, Tone: ${tone}` : ''}`);
                         
                         // Only update if translation is different from original
                         if (translatedText !== data.message) {
@@ -208,8 +276,8 @@ function connectToServer() {
                             // Show original text in translation element
                             if (translationElement) {
                                 const sourceLabel = typeof createSourceLabel === 'function' 
-                                    ? createSourceLabel(translationSource) 
-                                    : `Original <span class="text-xs text-blue-300">[via ${translationSource || 'Unknown'}]</span>`;
+                                    ? createSourceLabel(translationSource, tone) 
+                                    : `Original <span class="text-xs text-blue-300">[via ${translationSource || 'Unknown'}${tone ? ` (${tone})` : ''}]</span>`;
                                 
                                 translationElement.innerHTML = `
                                     <span class="translated-label">${sourceLabel}</span>
@@ -429,12 +497,25 @@ function emitChatMessage(message) {
     // In a real app, you might want to detect the language
     const sourceLang = 'EN';
     
+    // Generate a temporary client-side ID to track this message
+    const tempId = 'temp_' + Date.now();
+    
+    // Add message to UI with temporary ID
+    window.uiModule.addMessage(
+        message, 
+        true, 
+        '', 
+        null, 
+        tempId
+    );
+    
     // Broadcast message to all connected users with source language info
     socket.emit('chat_message', {
         userId: userId,
         userName: userName,
         message: message,
-        sourceLang: sourceLang
+        sourceLang: sourceLang,
+        tempId: tempId // Include the temporary ID to track this message
     });
 }
 
@@ -522,7 +603,7 @@ function updateMessageExpirationTimers() {
 }
 
 // Define createSourceLabel here as a fallback if ui-handlers.js implementation isn't available
-function createSourceLabel(translationSource) {
+function createSourceLabel(translationSource, tone = null) {
     if (!translationSource) return 'Original';
     
     let sourceClass = '';
@@ -541,5 +622,8 @@ function createSourceLabel(translationSource) {
             sourceClass = '';
     }
     
-    return `Original <span class="${sourceClass}">[${translationSource}]</span>`;
+    // Add tone information if available
+    const toneInfo = tone ? ` <span class="tone-indicator">(${tone})</span>` : '';
+    
+    return `Original <span class="${sourceClass}">[${translationSource}${toneInfo}]</span>`;
 }

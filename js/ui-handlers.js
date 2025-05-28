@@ -279,6 +279,63 @@ if (initialLanguage) {
     translateToggle.innerHTML = `<i class="fas fa-language text-blue-400"></i><span class="ml-2">Translate</span>`;
 }
 
+// Set up tone understanding checkbox
+const toneUnderstandingCheckbox = document.getElementById('tone-understanding');
+// Set initial state from saved preference
+toneUnderstandingCheckbox.checked = localStorage.getItem('tone_understanding') === 'true';
+
+// Handle tone understanding toggle
+toneUnderstandingCheckbox.addEventListener('change', function() {
+    window.translationModule.setToneUnderstanding(this.checked);
+    
+    // Show feedback that translation cache was cleared
+    const feedback = document.createElement('div');
+    feedback.className = 'absolute top-full left-0 mt-2 px-3 py-2 bg-blue-600 text-white text-xs rounded-md z-20';
+    feedback.textContent = this.checked ? 
+        'Tone understanding enabled. Translations will be context-aware.' : 
+        'Tone understanding disabled. Using standard translations.';
+    
+    // Position the feedback element
+    const parentContainer = this.closest('.relative');
+    if (parentContainer) {
+        parentContainer.appendChild(feedback);
+        
+        // Remove after a delay
+        setTimeout(() => {
+            feedback.style.opacity = '0';
+            feedback.style.transition = 'opacity 0.5s ease';
+            setTimeout(() => feedback.remove(), 500);
+        }, 3000);
+    }
+    
+    // If a language is selected, suggest retranslating 
+    if (window.translationModule.selectedLanguage) {
+        const retranslatePrompt = document.createElement('div');
+        retranslatePrompt.className = 'text-center py-2 text-xs text-blue-400 cursor-pointer hover:underline';
+        retranslatePrompt.textContent = `Click here to retranslate messages with ${this.checked ? 'tone understanding' : 'standard translation'}`;
+        
+        chatContainer.appendChild(retranslatePrompt);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+        
+        // Add click handler to retranslate
+        retranslatePrompt.addEventListener('click', function() {
+            // Find the active language button and trigger its click event to retranslate
+            const activeLanguage = document.querySelector('.language-selector.active');
+            if (activeLanguage) {
+                activeLanguage.click();
+            }
+            this.remove(); // Remove the prompt after clicking
+        });
+        
+        // Auto-remove after 10 seconds
+        setTimeout(() => {
+            if (retranslatePrompt.parentNode) {
+                retranslatePrompt.remove();
+            }
+        }, 10000);
+    }
+});
+
 // Toggle translation dropdown
 translateToggle.addEventListener('click', function() {
     languageDropdown.classList.toggle('hidden');
@@ -294,9 +351,10 @@ document.addEventListener('click', function(event) {
 /**
  * Creates a source label with appropriate styling
  * @param {string} translationSource - Source of translation service
+ * @param {string} tone - Detected message tone (if any)
  * @returns {string} HTML for the source label
  */
-function createSourceLabel(translationSource) {
+function createSourceLabel(translationSource, tone = null) {
     if (!translationSource) return 'Original';
     
     let sourceClass = '';
@@ -315,7 +373,10 @@ function createSourceLabel(translationSource) {
             sourceClass = '';
     }
     
-    return `Original <span class="${sourceClass}">[${translationSource}]</span>`;
+    // Add tone information if available
+    const toneInfo = tone ? ` <span class="tone-indicator">(${tone})</span>` : '';
+    
+    return `Original <span class="${sourceClass}">[${translationSource}${toneInfo}]</span>`;
 }
 
 // Language selector click handlers
@@ -323,6 +384,14 @@ languageSelectors.forEach(selector => {
     selector.addEventListener('click', function() {
         const previousLanguage = window.translationModule.getLanguage();
         const newLanguage = this.dataset.lang;
+        
+        if (previousLanguage === newLanguage) {
+            console.log(`Language already set to ${newLanguage}, no change needed`);
+            languageDropdown.classList.add('hidden');
+            return; // Skip if language hasn't changed
+        }
+        
+        console.log(`Changing language from ${previousLanguage} to ${newLanguage}`);
         
         // Save language preference
         window.translationModule.setLanguage(newLanguage);
@@ -332,23 +401,47 @@ languageSelectors.forEach(selector => {
         translateToggle.innerHTML = `<i class="fas fa-language text-blue-400"></i><span class="ml-2">${this.textContent}</span>`;
         languageDropdown.classList.add('hidden');
         
+        // Highlight selected language
+        document.querySelectorAll('.language-selector').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        this.classList.add('active');
+        
         // Reset translation cache when language changes
         window.translationModule.clearCache();
         
-        // Always retranslate messages when language selector is clicked
-        console.log(`Language changed from ${previousLanguage} to ${newLanguage}, retranslating messages`);
+        // Retranslate all messages when language selector is clicked
+        console.log(`Retranslating messages to ${newLanguage}`);
+        
         // Get all messages from others
         const otherMessages = document.querySelectorAll('.message-bubble.other-message');
+        
+        // Show a notification about translation in progress
+        const translationMsg = document.createElement('div');
+        translationMsg.className = 'text-center py-2 text-xs text-blue-400';
+        translationMsg.textContent = `Translating messages to ${this.textContent.trim()}...`;
+        chatContainer.appendChild(translationMsg);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+        
+        // Track translation progress
+        let completedTranslations = 0;
+        const totalMessages = otherMessages.length;
         
         otherMessages.forEach(messageEl => {
             const messageText = messageEl.querySelector('.message-text');
             const translationEl = messageEl.querySelector('.translated-message');
             
-            if (!messageText) return; // Skip if no message text element
+            if (!messageText) {
+                completedTranslations++;
+                return; // Skip if no message text element
+            }
             
             // Get original text
             const originalText = messageText.getAttribute('data-original');
-            if (!originalText) return; // Skip if no original text stored
+            if (!originalText) {
+                completedTranslations++;
+                return; // Skip if no original text stored
+            }
             
             if (newLanguage) {
                 // Show translating state
@@ -359,6 +452,7 @@ languageSelectors.forEach(selector => {
                     .then(result => {
                         const translatedText = result.translation;
                         const translationSource = result.source;
+                        const tone = result.tone; // Get detected tone if available
                         
                         if (translatedText !== originalText) {
                             // Update main message content with translation
@@ -367,7 +461,7 @@ languageSelectors.forEach(selector => {
                             // Show original in translation area
                             if (translationEl) {
                                 translationEl.innerHTML = `
-                                    <span class="translated-label">${createSourceLabel(translationSource)}</span>
+                                    <span class="translated-label">${createSourceLabel(translationSource, tone)}</span>
                                     <p>${originalText}</p>
                                 `;
                                 translationEl.classList.remove('hidden');
@@ -379,12 +473,32 @@ languageSelectors.forEach(selector => {
                                 translationEl.classList.add('hidden');
                             }
                         }
+                        
+                        // Track progress
+                        completedTranslations++;
+                        if (completedTranslations === totalMessages) {
+                            // Update notification when all translations are complete
+                            translationMsg.textContent = `Messages translated to ${this.textContent.trim()}`;
+                            // Remove notification after a delay
+                            setTimeout(() => {
+                                translationMsg.remove();
+                            }, 3000);
+                        }
                     })
                     .catch(err => {
                         console.error('Translation error:', err);
                         messageText.textContent = originalText; // Revert to original on error
                         if (translationEl) {
                             translationEl.classList.add('hidden');
+                        }
+                        
+                        // Track progress even on error
+                        completedTranslations++;
+                        if (completedTranslations === totalMessages) {
+                            translationMsg.textContent = `Some translations failed`;
+                            setTimeout(() => {
+                                translationMsg.remove();
+                            }, 3000);
                         }
                     });
             } else {
@@ -393,8 +507,18 @@ languageSelectors.forEach(selector => {
                 if (translationEl) {
                     translationEl.classList.add('hidden');
                 }
+                
+                completedTranslations++;
             }
         });
+        
+        // If there were no messages to translate
+        if (totalMessages === 0) {
+            translationMsg.textContent = `Language changed to ${this.textContent.trim()}`;
+            setTimeout(() => {
+                translationMsg.remove();
+            }, 3000);
+        }
     });
 });
 

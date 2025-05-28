@@ -6,6 +6,14 @@
 document.addEventListener('DOMContentLoaded', function() {
     console.log('GlobalTalk Chat application initialized');
     
+    // Initialize tone understanding checkbox
+    const toneCheckbox = document.getElementById('tone-understanding');
+    if (toneCheckbox) {
+        toneCheckbox.checked = localStorage.getItem('tone_understanding') === 'true';
+        // Initialize the translation module with the current preference
+        window.translationModule.setToneUnderstanding(toneCheckbox.checked);
+    }
+    
     // Set up message form submission
     const messageForm = document.getElementById('message-form');
     const messageInput = document.getElementById('message-input');
@@ -15,13 +23,17 @@ document.addEventListener('DOMContentLoaded', function() {
         const messageText = messageInput.value.trim();
         
         if (messageText) {
-            // Add user message to the UI - no translation for own messages
-            // We don't have message ID yet as it will be assigned by the server
-            window.uiModule.addMessage(messageText, true);
+            // Remove the direct UI update here
+            // We'll handle this in the emitChatMessage function instead
+            
+            // Clear input first
             messageInput.value = '';
             
             // Send message to server
             window.socketModule.emitChatMessage(messageText);
+            
+            // Focus back on input
+            messageInput.focus();
         }
     });
     
@@ -43,15 +55,19 @@ async function checkTranslationStatus() {
         // Update the translation service status in header
         const statusElement = document.querySelector('.app-header p');
         if (statusElement) {
-            statusElement.innerHTML = `<span class="text-green-400">● </span>Using ${testResult.source || 'Unknown'} translation`;
+            // Add tone understanding indicator if enabled
+            const toneEnabled = window.translationModule.isToneUnderstandingEnabled();
+            const toneIndicator = toneEnabled ? ' with tone analysis' : '';
+            
+            statusElement.innerHTML = `<span class="text-green-400">● </span>Using ${testResult.source || 'Unknown'} translation${toneIndicator}`;
             
             // Add tooltip to show fallback service information
             if (testResult.source === 'DeepSeek') {
-                statusElement.title = 'DeepSeek AI is active (Gemini and DeepL as fallbacks)';
+                statusElement.title = `DeepSeek AI is active${toneEnabled ? ' with tone analysis' : ''} (Gemini and DeepL as fallbacks)`;
             } else if (testResult.source === 'Gemini') {
-                statusElement.title = 'Using Gemini translation (DeepL as fallback)';
+                statusElement.title = `Using Gemini translation${toneEnabled ? ' with tone analysis' : ''} (DeepL as fallback)`;
             } else if (testResult.source === 'DeepL') {
-                statusElement.title = 'Using DeepL translation (fallback service)';
+                statusElement.title = `Using DeepL translation (fallback service${toneEnabled ? ', tone analysis unavailable' : ''})`;
             }
         }
     } catch (error) {

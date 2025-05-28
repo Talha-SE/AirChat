@@ -9,11 +9,19 @@ GlobalTalk uses a fallback system for the most reliable translations:
 2. Google Gemini (first fallback)
 3. DeepL (second fallback)
 
+## Features
+
+### Tone Understanding for Translations
+- Optional feature that analyzes the tone of messages before translation
+- Preserves emotional context and nuance in translations
+- Uses DeepSeek AI to detect message tone (formal, friendly, serious, etc.)
+- Toggle on/off in the language selection dropdown
+
 ## Environment Setup
 
 1. Copy `.env.example` to `.env`
 2. Fill in your API keys and configuration values:
-   - `HUGGINGFACE_API_KEY` - For DeepSeek AI translation service
+   - `HUGGINGFACE_API_KEY` - For DeepSeek AI translation service and tone analysis
    - `GEMINI_API_KEY` - For Google Gemini translation service
    - `DEEPL_API_KEY` - For DeepL translation service
 
