@@ -16,8 +16,8 @@ const { cloudinary, upload } = require('./cloudinary-config');
 dotenv.config();
 
 // Message expiration time in milliseconds (2 hours)
-const MESSAGE_EXPIRATION_TIME = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
-
+//const MESSAGE_EXPIRATION_TIME = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
+const MESSAGE_EXPIRATION_TIME = 60 * 1000;
 // Initialize message deletion worker
 function initializeMessageExpirationSystem() {
   console.log('Initializing message expiration system...');
