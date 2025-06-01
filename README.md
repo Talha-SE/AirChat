@@ -25,7 +25,56 @@ GlobalTalk uses a fallback system for the most reliable translations:
    - `GEMINI_API_KEY` - For Google Gemini translation service
    - `DEEPL_API_KEY` - For DeepL translation service
 
-### For Render Deployment:
+## Deployment
+
+### Vercel Deployment
+
+1. **Install Vercel CLI** (if not already installed):
+   ```bash
+   npm install -g vercel
+   ```
+
+2. **Login to Vercel**:
+   ```bash
+   vercel login
+   ```
+
+3. **Deploy to Vercel**:
+   ```bash
+   vercel
+   ```
+
+4. **Set Environment Variables in Vercel Dashboard**:
+   - Go to your project settings in Vercel dashboard
+   - Navigate to "Environment Variables"
+   - Add all required variables:
+     - `HUGGINGFACE_API_KEY`
+     - `GEMINI_API_KEY`
+     - `DEEPL_API_KEY`
+     - `FIREBASE_API_KEY`
+     - `FIREBASE_AUTH_DOMAIN`
+     - `FIREBASE_PROJECT_ID`
+     - `FIREBASE_STORAGE_BUCKET`
+     - `FIREBASE_MESSAGING_SENDER_ID`
+     - `FIREBASE_APP_ID`
+     - `FIREBASE_MEASUREMENT_ID`
+     - `CLOUDINARY_CLOUD_NAME`
+     - `CLOUDINARY_API_KEY`
+     - `CLOUDINARY_API_SECRET`
+     - `NODE_ENV` (set to "production")
+
+5. **Firebase Service Account**:
+   - For Vercel, convert your `serviceAccountKey.json` to environment variables:
+     - `FIREBASE_PRIVATE_KEY` (the private key from the JSON file)
+     - `FIREBASE_CLIENT_EMAIL` (the client email from the JSON file)
+     - `FIREBASE_PROJECT_ID` (same as above)
+
+6. **Redeploy after setting environment variables**:
+   ```bash
+   vercel --prod
+   ```
+
+### Render Deployment (Alternative)
 
 1. Go to your Render dashboard
 2. Select your service

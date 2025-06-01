@@ -1,0 +1,44 @@
+{
+  "version": 2,
+  "name": "globaltalk-chat",
+  "builds": [
+    {
+      "src": "server.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/socket.io/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/translate",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/upload-multiple",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/file/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/server.js"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "functions": {
+    "server.js": {
+      "maxDuration": 30
+    }
+  }
+}

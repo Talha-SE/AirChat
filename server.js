@@ -686,15 +686,21 @@ io.on('connection', (socket) => {
     // Send the list of active users to the newly joined user
     socket.emit('active_users', Array.from(activeUsers.values()));
     
-    // Send message history from Firestore
+    // Broadcast to all other users that someone joined
+    socket.broadcast.emit('user_joined', {
+      userId: userData.userId,
+      userName: userData.userName
+    });
+    
+    // Send recent message history to the new user
     try {
-      const messagesSnapshot = await db.collection('messages')
+      const recentMessages = await db.collection('messages')
         .orderBy('timestamp', 'desc')
-        .limit(50)
+        .limit(20)
         .get();
       
       const messages = [];
-      messagesSnapshot.forEach(doc => {
+      recentMessages.forEach(doc => {
         messages.push({
           id: doc.id,
           ...doc.data(),
@@ -702,172 +708,155 @@ io.on('connection', (socket) => {
         });
       });
       
-      // Send messages in chronological order
       socket.emit('message_history', messages.reverse());
     } catch (error) {
       console.error('Error fetching message history:', error);
     }
-    
-    // Notify others that a new user joined
-    socket.broadcast.emit('user_joined', {
-      userId: userData.userId,
-      userName: userData.userName
-    });
   });
   
+  // Handle chat messages
   socket.on('chat_message', async (data) => {
-    // Add expiration time to message data for client awareness
-    const expirationTime = new Date(Date.now() + MESSAGE_EXPIRATION_TIME);
-    
-    // Ensure message has the source language and preserve tempId
-    const completeData = {
-        ...data,
-        sourceLang: data.sourceLang || 'EN', // Default to English if not specified
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        expiresAt: admin.firestore.Timestamp.fromDate(expirationTime)
-    };
-    
     try {
-        // Save message to Firestore
-        const messageRef = await db.collection('messages').add({
-            userId: completeData.userId,
-            userName: completeData.userName,
-            message: completeData.message,
-            sourceLang: completeData.sourceLang,
-            timestamp: completeData.timestamp,
-            expiresAt: completeData.expiresAt // Store expiration time
-        });
-        
-        // Add Firestore ID to the emitted message
-        completeData.id = messageRef.id;
-        // Convert timestamp for client
-        completeData.timestamp = new Date();
-        // Add expiration time to client format
-        completeData.expiresAt = expirationTime;
-        // Keep the tempId if it exists to help the client match messages
-        // completeData.tempId is already preserved from the spread operation
+      console.log('Received message from:', data.userName);
+      
+      // Calculate expiration time (2 hours from now)
+      const expiresAt = new Date(Date.now() + MESSAGE_EXPIRATION_TIME);
+      
+      // Save message to Firestore
+      const messageRef = await db.collection('messages').add({
+        userId: data.userId,
+        userName: data.userName,
+        message: data.message,
+        sourceLang: data.sourceLang || 'EN',
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+        isFileShare: false
+      });
+      
+      console.log('Message saved to Firestore with ID:', messageRef.id);
+      
+      // Broadcast to all connected users including sender
+      const messageData = {
+        id: messageRef.id,
+        userId: data.userId,
+        userName: data.userName,
+        message: data.message,
+        sourceLang: data.sourceLang,
+        timestamp: new Date(),
+        expiresAt: expiresAt,
+        tempId: data.tempId
+      };
+      
+      io.emit('chat_message', messageData);
     } catch (error) {
-        console.error('Error saving message to database:', error);
+      console.error('Error saving message:', error);
+      socket.emit('message_error', { error: 'Failed to save message' });
     }
-    
-    // Broadcast the message to all clients
-    io.emit('chat_message', completeData);
   });
   
+  // Handle file shares
   socket.on('file_shared', async (data) => {
     try {
-      // Save file share to Firestore
+      console.log('File shared by:', data.userName);
+      
+      // Calculate expiration time
+      const expiresAt = new Date(Date.now() + MESSAGE_EXPIRATION_TIME);
+      
+      // Save file share message to Firestore
       const messageRef = await db.collection('messages').add({
         userId: data.userId,
         userName: data.userName,
         files: data.files,
-        isFileShare: true,
-        timestamp: admin.firestore.FieldValue.serverTimestamp()
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+        isFileShare: true
       });
       
-      // Add Firestore ID to the emitted message
-      data.id = messageRef.id;
-      data.timestamp = new Date();
-      
-      console.log(`File share saved and broadcast: ${data.files?.length || 0} files from ${data.userName}`);
+      // Broadcast to all other users (not sender)
+      socket.broadcast.emit('file_shared', {
+        id: messageRef.id,
+        userId: data.userId,
+        userName: data.userName,
+        files: data.files,
+        expiresAt: expiresAt
+      });
     } catch (error) {
-      console.error('Error saving file share to database:', error);
-    }
-    
-    // Broadcast file metadata to all clients
-    io.emit('file_shared', data);
-  });
-  
-  socket.on('delete_message', async (data) => {
-    try {
-      // Get the message from Firestore
-      const messageDoc = await db.collection('messages').doc(data.messageId).get();
-      
-      if (!messageDoc.exists) {
-        socket.emit('error', { message: 'Message not found' });
-        return;
-      }
-      
-      const messageData = messageDoc.data();
-      
-      // Check if user is the sender of the message
-      if (messageData.userId !== data.userId) {
-        socket.emit('error', { message: 'You do not have permission to delete this message' });
-        return;
-      }
-      
-      // Delete the message from Firestore
-      await db.collection('messages').doc(data.messageId).delete();
-      
-      // Broadcast message deletion to all clients
-      io.emit('message_deleted', { messageId: data.messageId });
-      
-      console.log(`Message ${data.messageId} deleted by user ${data.userId}`);
-    } catch (error) {
-      console.error('Error deleting message via socket:', error);
-      socket.emit('error', { message: 'Failed to delete message', details: error.message });
+      console.error('Error saving file share:', error);
     }
   });
   
+  // Handle heartbeat
+  socket.on('heartbeat', (data) => {
+    // Update user's last seen time
+    if (activeUsers.has(data.userId)) {
+      const user = activeUsers.get(data.userId);
+      user.lastSeen = new Date();
+      activeUsers.set(data.userId, user);
+    }
+  });
+  
+  // Handle disconnection
   socket.on('disconnect', () => {
-    if (socket.userData) {
-      console.log(`${socket.userData.userName} (${socket.userData.userId}) left the chat`);
-      
-      // Remove user from active users
-      activeUsers.delete(socket.userData.userId);
-      
-      // Notify others that a user left
-      socket.broadcast.emit('user_left', {
-        userId: socket.userData.userId,
-        userName: socket.userData.userName
-      });
+    console.log('User disconnected:', socket.id);
+    
+    // Find and remove user from active users
+    for (const [userId, userData] of activeUsers.entries()) {
+      if (userData.socketId === socket.id) {
+        activeUsers.delete(userId);
+        
+        // Broadcast to remaining users
+        socket.broadcast.emit('user_left', {
+          userId: userId,
+          userName: userData.userName
+        });
+        
+        // Update active users list
+        socket.broadcast.emit('active_users', Array.from(activeUsers.values()));
+        break;
+      }
     }
   });
 });
 
-// Track active users
-const activeUsers = new Map(); // userId -> userData
-
-// Random name generator - first and last name combinations
-const firstNames = ['Amber', 'Blake', 'Casey', 'Dana', 'Ellis', 'Fran', 'Glenn', 'Harper', 'Indigo', 'Jordan', 'Kelly', 'Logan', 'Morgan', 'Noel', 'Parker', 'Quinn', 'Riley', 'Sage', 'Taylor', 'Val'];
-const lastNames = ['Sky', 'River', 'Stone', 'Wood', 'Moon', 'Star', 'Cloud', 'Ocean', 'Mountain', 'Meadow', 'Forest', 'Field', 'Valley', 'Garden', 'Lake', 'Dawn', 'Dusk', 'Storm', 'Wind', 'Rain'];
-
+// Helper function to generate unique names
 function generateUniqueName() {
-  const first = firstNames[Math.floor(Math.random() * firstNames.length)];
-  const last = lastNames[Math.floor(Math.random() * lastNames.length)];
-  return `${first} ${last}`;
+  const adjectives = ['Cool', 'Fast', 'Smart', 'Bright', 'Happy', 'Lucky', 'Bold', 'Swift'];
+  const nouns = ['Tiger', 'Eagle', 'Dolphin', 'Phoenix', 'Dragon', 'Lion', 'Falcon', 'Wolf'];
+  
+  let attempts = 0;
+  let name;
+  
+  do {
+    const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const noun = nouns[Math.floor(Math.random() * nouns.length)];
+    const num = Math.floor(Math.random() * 1000);
+    name = `${adj}${noun}${num}`;
+    attempts++;
+  } while (activeUsers.has(name) && attempts < 10);
+  
+  return name;
 }
 
-// Create a function to inject environment variables into the HTML
-function injectEnvVarsIntoHtml(htmlContent) {
-  return htmlContent
-    .replace(/%%FIREBASE_API_KEY%%/g, process.env.FIREBASE_API_KEY || '')
-    .replace(/%%FIREBASE_AUTH_DOMAIN%%/g, process.env.FIREBASE_AUTH_DOMAIN || '')
-    .replace(/%%FIREBASE_PROJECT_ID%%/g, process.env.FIREBASE_PROJECT_ID || '')
-    .replace(/%%FIREBASE_STORAGE_BUCKET%%/g, process.env.FIREBASE_STORAGE_BUCKET || '')
-    .replace(/%%FIREBASE_MESSAGING_SENDER_ID%%/g, process.env.FIREBASE_MESSAGING_SENDER_ID || '')
-    .replace(/%%FIREBASE_APP_ID%%/g, process.env.FIREBASE_APP_ID || '')
-    .replace(/%%FIREBASE_MEASUREMENT_ID%%/g, process.env.FIREBASE_MEASUREMENT_ID || '');
-}
+// Store active users
+const activeUsers = new Map();
 
-// Modify the route to serve index.html with injected variables
-app.get('/', (req, res) => {
-  const indexPath = path.join(__dirname, 'index.html');
-  fs.readFile(indexPath, 'utf8', (err, htmlContent) => {
-    if (err) {
-      console.error("Error reading index.html:", err);
-      return res.status(500).send('Error loading application');
-    }
-    // Inject environment variables
-    const processedHtml = injectEnvVarsIntoHtml(htmlContent);
-    res.send(processedHtml);
-  });
-});
+// Initialize message expiration system
+initializeMessageExpirationSystem();
 
-// Start the server
+// Start server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  // Start the message expiration system
-  initializeMessageExpirationSystem();
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  server.close(() => {
+    process.exit(0);
+  });
+});
+
+// Export for Vercel
+module.exports = app;

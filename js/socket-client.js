@@ -17,14 +17,33 @@ const connectionStatus = document.getElementById('connection-status');
  * @returns {object} Socket.io connection
  */
 function connectToServer() {
-    // For deployment on Render:
-    const socket = io('https://airchat-global.onrender.com', {
+    // Determine the connection URL based on environment
+    let socketUrl;
+    
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        // Local development
+        socketUrl = 'http://localhost:3000';
+    } else if (window.location.hostname.includes('vercel.app')) {
+        // Vercel deployment
+        socketUrl = window.location.origin;
+    } else if (window.location.hostname.includes('onrender.com')) {
+        // Render deployment (keeping existing)
+        socketUrl = 'https://airchat-global.onrender.com';
+    } else {
+        // Use current origin as fallback
+        socketUrl = window.location.origin;
+    }
+    
+    console.log('Connecting to:', socketUrl);
+    
+    const socket = io(socketUrl, {
         reconnectionAttempts: Infinity, // Never stop trying to reconnect
         reconnectionDelay: 1000,
         reconnectionDelayMax: 10000,
         timeout: 60000, // Longer timeout (60 seconds)
         pingTimeout: 120000, // Longer ping timeout (2 minutes)
         pingInterval: 25000, // More frequent pings (25 seconds)
+        transports: ['websocket', 'polling'] // Enable both for better compatibility
     });
     
     // Set up heartbeat to keep connection alive

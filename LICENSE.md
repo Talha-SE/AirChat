@@ -24,4 +24,4 @@ This license is valid until December 31, 2025.
 A copy of the full license text is available at:
 [https://creativecommons.org/licenses/by/4.0/legalcode](https://creativecommons.org/licenses/by/4.0/legalcode)
 
-© 2023-2025 GlobalTalk Chat Application
+© 2025 GlobalTalk Chat Application
