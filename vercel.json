@@ -1,12 +1,6 @@
 {
   "version": 2,
   "name": "globaltalk-chat",
-  "builds": [
-    {
-      "src": "server.js",
-      "use": "@vercel/node"
-    }
-  ],
   "routes": [
     {
       "src": "/socket.io/(.*)",
@@ -38,7 +32,10 @@
   },
   "functions": {
     "server.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     }
-  }
+  },
+  "regions": [
+    "cle1"
+  ]
 }
