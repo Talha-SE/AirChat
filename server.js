@@ -858,5 +858,5 @@ process.on('SIGTERM', () => {
   });
 });
 
-// Export for Vercel
-module.exports = app;
+// Export app for Vercel serverless functions
+module.exports = { app, server };
