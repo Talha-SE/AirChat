@@ -8,12 +8,43 @@ const dotenv = require('dotenv');
 const axios = require('axios');
 const fs = require('fs');
 
-// Import Firebase and Cloudinary configurations
-const { admin, db } = require('./firebase-admin');
-const { cloudinary, upload } = require('./cloudinary-config');
-
-// Load environment variables
+// Load environment variables first
 dotenv.config();
+
+// Add error handling for serverless environment
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+});
+
+// Import Firebase and Cloudinary configurations with error handling
+let admin, db, cloudinary, upload;
+
+try {
+  const firebaseModule = require('./firebase-admin');
+  admin = firebaseModule.admin;
+  db = firebaseModule.db;
+  console.log('Firebase Admin loaded successfully');
+} catch (firebaseError) {
+  console.error('Failed to load Firebase Admin:', firebaseError.message);
+  // Create mock objects to prevent crashes
+  admin = { firestore: { FieldValue: { serverTimestamp: () => new Date() } } };
+  db = null;
+}
+
+try {
+  const cloudinaryModule = require('./cloudinary-config');
+  cloudinary = cloudinaryModule.cloudinary;
+  upload = cloudinaryModule.upload;
+  console.log('Cloudinary config loaded successfully');
+} catch (cloudinaryError) {
+  console.error('Failed to load Cloudinary config:', cloudinaryError.message);
+  // Create mock upload middleware
+  upload = { array: () => (req, res, next) => next() };
+}
 
 // Message expiration time in milliseconds (2 hours)
 //const MESSAGE_EXPIRATION_TIME = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
